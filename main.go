@@ -219,6 +219,8 @@ func (n *FunctionAST) codegen() llvm.Value {
 	}
 
 	//------------This code does have a bug, though. Since the PrototypeAST::Codegen can return a previously defined forward declaration, our code can actually delete a forward declaration. There are a number of ways to fix this bug, see what you can come up with! Here is a testcase
+
+	FPM.RunFunc(theFunction)
 	return theFunction
 }
 
@@ -421,9 +423,11 @@ func ParseTopLevelExpr() *FunctionAST {
 // LLVM Stuff
 
 var (
-	TheModule   = llvm.NewModule("root")
-	Builder     = llvm.NewBuilder()
-	NamedValues map[string]llvm.Value
+	TheModule            = llvm.NewModule("root")
+	FPM                  = llvm.NewFunctionPassManagerForModule(TheModule)
+	executionEngine, err = llvm.NewExecutionEngine(TheModule)
+	Builder              = llvm.NewBuilder()
+	NamedValues          = map[string]llvm.Value{}
 )
 
 // Driver
@@ -454,7 +458,8 @@ func handleTopLevelExpression() {
 	if F := ParseTopLevelExpr(); F != nil {
 		if LF := F.codegen(); !LF.IsNil() {
 			fmt.Fprint(os.Stderr, "Read top-level expression:")
-			LF.Dump()
+			returnval := executionEngine.RunFunction(LF, []llvm.GenericValue{})
+			fmt.Println("Evaluated to", returnval.Float(llvm.DoubleType()))
 		}
 	} else {
 		getNextToken()
@@ -479,6 +484,12 @@ func mainLoop() {
 }
 
 func main() {
+	FPM.AddInstructionCombiningPass()
+	FPM.AddReassociatePass()
+	FPM.AddGVNPass()
+	FPM.AddCFGSimplificationPass()
+	FPM.InitializeFunc()
+
 	input := bufio.NewReader(os.Stdin)
 	for {
 		fmt.Print("> ")
@@ -488,5 +499,4 @@ func main() {
 		getNextToken()
 		mainLoop()
 	}
-	TheModule.Dump()
 }
