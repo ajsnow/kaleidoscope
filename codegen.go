@@ -1,11 +1,6 @@
 package main
 
-import (
-	"fmt"
-	"os"
-
-	"github.com/ajsnow/llvm"
-)
+import "github.com/ajsnow/llvm"
 
 var (
 	TheModule            = llvm.NewModule("root")
@@ -14,6 +9,14 @@ var (
 	Builder              = llvm.NewBuilder()
 	NamedValues          = map[string]llvm.Value{}
 )
+
+func init() {
+	FPM.AddInstructionCombiningPass()
+	FPM.AddReassociatePass()
+	FPM.AddGVNPass()
+	FPM.AddCFGSimplificationPass()
+	FPM.InitializeFunc()
+}
 
 func (n *NumberExprAST) codegen() llvm.Value {
 	return llvm.ConstFloat(llvm.DoubleType(), n.val)
@@ -124,57 +127,4 @@ func (n *FunctionAST) codegen() llvm.Value {
 
 	FPM.RunFunc(theFunction)
 	return theFunction
-}
-
-// Driver
-
-func handleDefinition() {
-	if F := ParseDefinition(); F != nil {
-		if LF := F.codegen(); !LF.IsNil() {
-			fmt.Fprint(os.Stderr, "Read function definition:")
-			LF.Dump()
-		}
-	} else {
-		getNextToken()
-	}
-}
-
-func handleExtern() {
-	if F := ParseExtern(); F != nil {
-		if LF := F.codegen(); !LF.IsNil() {
-			fmt.Fprint(os.Stderr, "Read extern:")
-			LF.Dump()
-		}
-	} else {
-		getNextToken()
-	}
-}
-
-func handleTopLevelExpression() {
-	if F := ParseTopLevelExpr(); F != nil {
-		if LF := F.codegen(); !LF.IsNil() {
-			fmt.Fprint(os.Stderr, "Read top-level expression:")
-			returnval := executionEngine.RunFunction(LF, []llvm.GenericValue{})
-			fmt.Println("Evaluated to", returnval.Float(llvm.DoubleType()))
-		}
-	} else {
-		getNextToken()
-	}
-}
-
-func mainLoop() {
-	for {
-		switch curToken {
-		case tEof:
-			return
-		case ';':
-			getNextToken()
-		case tDef:
-			handleDefinition()
-		case tExtern:
-			handleExtern()
-		default:
-			handleTopLevelExpression()
-		}
-	}
 }

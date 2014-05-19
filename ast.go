@@ -3,43 +3,49 @@ package main
 import (
 	"fmt"
 	"os"
+	"strconv"
+	"text/scanner"
 
 	"github.com/ajsnow/llvm"
 )
 
 // Parsing Functions
 func ParseNumericExpr() ExprAST {
-	result := &NumberExprAST{numberValue}
-	getNextToken()
+	val, err := strconv.ParseFloat(s.TokenText(), 64)
+	if err != nil {
+		return Error("invalid number: " + s.TokenText())
+	}
+	result := &NumberExprAST{val}
+	token = s.Scan()
 	return result
 }
 
 func ParseParenExpr() ExprAST {
-	getNextToken()
+	token = s.Scan()
 	v := ParseExpression()
 	if v == nil {
 		return nil
 	}
 
-	if curToken != ')' {
+	if token != ')' {
 		return Error("expected ')'")
 	}
-	getNextToken()
+	token = s.Scan()
 	return v
 }
 
 func ParseIdentifierExpr() ExprAST {
-	name := identifierName
+	name := s.TokenText()
 
-	getNextToken()
-	if curToken != '(' { // variable reference
+	token = s.Scan()
+	if token != '(' { // variable reference
 		return &VariableExprAST{name}
 	}
 
 	// function call
-	getNextToken()
+	token = s.Scan()
 	args := []ExprAST{}
-	if curToken != ')' {
+	if token != ')' {
 		for {
 			arg := ParseExpression()
 			if arg == nil {
@@ -47,30 +53,32 @@ func ParseIdentifierExpr() ExprAST {
 			}
 			args = append(args, arg)
 
-			if curToken == ')' {
+			if token == ')' {
 				break
 			}
 
-			if curToken != ',' {
+			if token != ',' {
 				return Error("expected ')' or ',' in argument list")
 			}
-			getNextToken()
+			token = s.Scan()
 		}
 	}
-	getNextToken()
+	token = s.Scan()
 	return &CallExprAST{name, args}
 }
 
 func ParsePrimary() ExprAST {
-	switch curToken {
-	case tIdentifier:
+	switch token {
+	case scanner.Ident:
 		return ParseIdentifierExpr()
-	case tNumber:
+	case scanner.Int:
+		fallthrough
+	case scanner.Float:
 		return ParseNumericExpr()
 	case '(':
 		return ParseParenExpr()
 	default:
-		return Error(fmt.Sprintln("unknown token when expecting expression:\n\t", curToken, ":", identifierName))
+		return Error(fmt.Sprintln("unknown token when expecting expression:\n\t", token, ":", s.TokenText()))
 	}
 }
 
@@ -82,7 +90,7 @@ var BinaryOpPrecedence = map[rune]int{
 }
 
 func getTokenPrecedence() int {
-	return BinaryOpPrecedence[curToken]
+	return BinaryOpPrecedence[token]
 }
 
 func ParseExpression() ExprAST {
@@ -102,8 +110,8 @@ func ParseBinaryOpRHS(exprPrec int, lhs ExprAST) ExprAST {
 			return lhs
 		}
 
-		binOp := curToken
-		getNextToken()
+		binOp := token
+		token = s.Scan()
 
 		rhs := ParsePrimary()
 		if rhs == nil {
@@ -123,31 +131,31 @@ func ParseBinaryOpRHS(exprPrec int, lhs ExprAST) ExprAST {
 }
 
 func ParsePrototype() *PrototypeAST {
-	if curToken != tIdentifier {
+	if token != scanner.Ident {
 		return ErrorP("expected function name in prototype")
 	}
 
-	fnName := identifierName
-	getNextToken()
+	fnName := s.TokenText()
+	token = s.Scan()
 
-	if curToken != '(' {
+	if token != '(' {
 		return ErrorP("expected '(' in prototype")
 	}
 
 	ArgNames := []string{}
-	for getNextToken() == tIdentifier {
-		ArgNames = append(ArgNames, identifierName)
+	for token = s.Scan(); token == scanner.Ident || token == ','; token = s.Scan() {
+		ArgNames = append(ArgNames, s.TokenText())
 	}
-	if curToken != ')' {
+	if token != ')' {
 		return ErrorP("expected ')' in prototype")
 	}
 
-	getNextToken()
+	token = s.Scan()
 	return &PrototypeAST{fnName, ArgNames}
 }
 
 func ParseDefinition() *FunctionAST {
-	getNextToken()
+	token = s.Scan()
 	proto := ParsePrototype()
 	if proto == nil {
 		return nil
@@ -161,7 +169,7 @@ func ParseDefinition() *FunctionAST {
 }
 
 func ParseExtern() *PrototypeAST {
-	getNextToken()
+	token = s.Scan()
 	return ParsePrototype()
 }
 
@@ -212,15 +220,7 @@ type FunctionAST struct {
 }
 
 // Helpers:
-// getNextToken impliments simple 1 token buffer
 // error* prints error message and returns 0-values
-var curToken rune
-
-func getNextToken() rune {
-	curToken = getToken()
-	return curToken
-}
-
 func Error(s string) ExprAST {
 	fmt.Fprintf(os.Stderr, "Error: %v\n", s)
 	return nil
