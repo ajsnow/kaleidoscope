@@ -10,19 +10,19 @@ import (
 )
 
 // Parsing Functions
-func ParseNumericExpr() ExprAST {
+func parseNumericExpr() exprAST {
 	val, err := strconv.ParseFloat(s.TokenText(), 64)
 	if err != nil {
 		return Error("invalid number: " + s.TokenText())
 	}
-	result := &NumberExprAST{val}
+	result := &numAST{val}
 	token = s.Scan()
 	return result
 }
 
-func ParseParenExpr() ExprAST {
+func parseParenExpr() exprAST {
 	token = s.Scan()
-	v := ParseExpression()
+	v := parseExpression()
 	if v == nil {
 		return nil
 	}
@@ -34,21 +34,22 @@ func ParseParenExpr() ExprAST {
 	return v
 }
 
-func ParseIdentifierExpr() ExprAST {
+func parseIdentifierExpr() exprAST {
 	name := s.TokenText()
 
 	token = s.Scan()
 	if token != '(' { // variable reference
-		return &VariableExprAST{name}
+		return &varAST{name}
 	}
 
 	// function call
-	args := []ExprAST{}
+	args := []exprAST{}
 	for token = s.Scan(); token != ')'; { //token = s.Scan() {
 		switch token {
 		case ',':
+			token = s.Scan()
 		default:
-			arg := ParseExpression()
+			arg := parseExpression()
 			if arg == nil {
 				return nil
 			}
@@ -56,19 +57,19 @@ func ParseIdentifierExpr() ExprAST {
 		}
 	}
 	token = s.Scan()
-	return &CallExprAST{name, args}
+	return &callAST{name, args}
 }
 
-func ParsePrimary() ExprAST {
+func parsePrimary() exprAST {
 	switch token {
 	case scanner.Ident:
-		return ParseIdentifierExpr()
+		return parseIdentifierExpr()
 	case scanner.Int:
 		fallthrough
 	case scanner.Float:
-		return ParseNumericExpr()
+		return parseNumericExpr()
 	case '(':
-		return ParseParenExpr()
+		return parseParenExpr()
 	case scanner.EOF:
 		return nil
 	default:
@@ -76,7 +77,7 @@ func ParsePrimary() ExprAST {
 	}
 }
 
-var BinaryOpPrecedence = map[rune]int{
+var binaryOpPrecedence = map[rune]int{
 	'<': 10,
 	'+': 20,
 	'-': 20,
@@ -85,20 +86,20 @@ var BinaryOpPrecedence = map[rune]int{
 }
 
 func getTokenPrecedence() int {
-	return BinaryOpPrecedence[token]
+	return binaryOpPrecedence[token]
 }
 
-func ParseExpression() ExprAST {
-	lhs := ParsePrimary()
+func parseExpression() exprAST {
+	lhs := parsePrimary()
 	if lhs == nil {
 		return nil
 	}
 
-	return ParseBinaryOpRHS(1, lhs)
+	return parseBinaryOpRHS(1, lhs)
 }
 
-func ParseBinaryOpRHS(exprPrec int, lhs ExprAST) ExprAST {
-	for { // wtf?
+func parseBinaryOpRHS(exprPrec int, lhs exprAST) exprAST {
+	for {
 		tokenPrec := getTokenPrecedence()
 
 		if tokenPrec < exprPrec {
@@ -108,24 +109,24 @@ func ParseBinaryOpRHS(exprPrec int, lhs ExprAST) ExprAST {
 		binOp := token
 		token = s.Scan()
 
-		rhs := ParsePrimary()
+		rhs := parsePrimary()
 		if rhs == nil {
 			return nil
 		}
 
 		nextPrec := getTokenPrecedence()
 		if tokenPrec < nextPrec {
-			rhs = ParseBinaryOpRHS(tokenPrec+1, rhs)
+			rhs = parseBinaryOpRHS(tokenPrec+1, rhs)
 			if rhs == nil {
 				return nil
 			}
 		}
 
-		lhs = &BinaryExprAST{binOp, lhs, rhs}
+		lhs = &binAST{binOp, lhs, rhs}
 	}
 }
 
-func ParsePrototype() *PrototypeAST {
+func parsePrototype() *protoAST {
 	if token != scanner.Ident {
 		return ErrorP("expected function name in prototype")
 	}
@@ -148,87 +149,87 @@ func ParsePrototype() *PrototypeAST {
 	}
 
 	token = s.Scan()
-	return &PrototypeAST{fnName, ArgNames}
+	return &protoAST{fnName, ArgNames}
 }
 
-func ParseDefinition() *FunctionAST {
+func parseDefinition() *funcAST {
 	token = s.Scan()
-	proto := ParsePrototype()
+	proto := parsePrototype()
 	if proto == nil {
 		return nil
 	}
 
-	e := ParseExpression()
+	e := parseExpression()
 	if e == nil {
 		return nil
 	}
-	return &FunctionAST{proto, e}
+	return &funcAST{proto, e}
 }
 
-func ParseExtern() *PrototypeAST {
+func parseExtern() *protoAST {
 	token = s.Scan()
-	return ParsePrototype()
+	return parsePrototype()
 }
 
-func ParseTopLevelExpr() *FunctionAST {
-	e := ParseExpression()
+func parseTopLevelExpr() *funcAST {
+	e := parseExpression()
 	if e == nil {
 		return nil
 	}
 
 	// Make anon proto
-	proto := &PrototypeAST{"", []string{}}
-	return &FunctionAST{proto, e}
+	proto := &protoAST{"", []string{}}
+	return &funcAST{proto, e}
 }
 
 // AST Nodes
 
-type ExprAST interface {
+type exprAST interface {
 	codegen() llvm.Value
 }
 
-type NumberExprAST struct {
+type numAST struct {
 	val float64
 }
 
-type VariableExprAST struct {
+type varAST struct {
 	name string
 }
 
-type BinaryExprAST struct {
+type binAST struct {
 	op    rune
-	left  ExprAST
-	right ExprAST
+	left  exprAST
+	right exprAST
 }
 
-type CallExprAST struct {
+type callAST struct {
 	callee string
-	args   [](ExprAST)
+	args   [](exprAST)
 }
 
-type PrototypeAST struct {
+type protoAST struct {
 	name string
 	args []string
 }
 
-type FunctionAST struct {
-	proto *PrototypeAST
-	body  ExprAST
+type funcAST struct {
+	proto *protoAST
+	body  exprAST
 }
 
 // Helpers:
 // error* prints error message and returns 0-values
-func Error(s string) ExprAST {
+func Error(s string) exprAST {
 	fmt.Fprintf(os.Stderr, "Error: %v\n", s)
 	return nil
 }
 
-func ErrorP(s string) *PrototypeAST {
+func ErrorP(s string) *protoAST {
 	Error(s)
 	return nil
 }
 
-func ErrorF(s string) *FunctionAST {
+func ErrorF(s string) *funcAST {
 	Error(s)
 	return nil
 }

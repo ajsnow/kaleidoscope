@@ -18,11 +18,11 @@ func init() {
 	FPM.InitializeFunc()
 }
 
-func (n *NumberExprAST) codegen() llvm.Value {
+func (n *numAST) codegen() llvm.Value {
 	return llvm.ConstFloat(llvm.DoubleType(), n.val)
 }
 
-func (n *VariableExprAST) codegen() llvm.Value {
+func (n *varAST) codegen() llvm.Value {
 	v := NamedValues[n.name]
 	if v.IsNil() {
 		return ErrorV("unknown variable name")
@@ -30,7 +30,7 @@ func (n *VariableExprAST) codegen() llvm.Value {
 	return v
 }
 
-func (n *BinaryExprAST) codegen() llvm.Value {
+func (n *binAST) codegen() llvm.Value {
 	l := n.left.codegen()
 	r := n.right.codegen()
 	if l.IsNil() || r.IsNil() {
@@ -54,7 +54,7 @@ func (n *BinaryExprAST) codegen() llvm.Value {
 	}
 }
 
-func (n *CallExprAST) codegen() llvm.Value {
+func (n *callAST) codegen() llvm.Value {
 	callee := TheModule.NamedFunction(n.callee)
 	if callee.IsNil() {
 		return ErrorV("unknown function referenced")
@@ -75,7 +75,7 @@ func (n *CallExprAST) codegen() llvm.Value {
 	return Builder.CreateCall(callee, args, "calltmp")
 }
 
-func (n *PrototypeAST) codegen() llvm.Value {
+func (n *protoAST) codegen() llvm.Value {
 	funcArgs := []llvm.Type{}
 	for _ = range n.args {
 		funcArgs = append(funcArgs, llvm.DoubleType())
@@ -104,7 +104,7 @@ func (n *PrototypeAST) codegen() llvm.Value {
 	return function
 }
 
-func (n *FunctionAST) codegen() llvm.Value {
+func (n *funcAST) codegen() llvm.Value {
 	NamedValues = make(map[string]llvm.Value)
 
 	theFunction := n.proto.codegen()

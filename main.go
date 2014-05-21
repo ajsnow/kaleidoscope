@@ -23,7 +23,7 @@ func main() {
 	if len(os.Args) == 2 {
 		f, _ := os.Open(os.Args[1])
 		s.Init(f)
-		theLoop()
+		mainLoop()
 	}
 
 	input := bufio.NewReader(os.Stdin)
@@ -31,13 +31,13 @@ func main() {
 		fmt.Print("> ")
 		l, _, _ := input.ReadLine()
 		s.Init(bytes.NewBuffer(l))
-		die = theLoop()
+		die = mainLoop()
 	}
 }
 
 // Driver
 
-func theLoop() bool {
+func mainLoop() bool {
 	for token = s.Scan(); token != scanner.EOF; {
 		switch token {
 		case ';':
@@ -45,8 +45,7 @@ func theLoop() bool {
 		case scanner.EOF:
 			return true
 		case scanner.Ident:
-			name := s.TokenText()
-			switch name {
+			switch s.TokenText() {
 			case "def":
 				handleDefinition()
 			case "extern":
@@ -62,7 +61,7 @@ func theLoop() bool {
 }
 
 func handleDefinition() {
-	if F := ParseDefinition(); F != nil {
+	if F := parseDefinition(); F != nil {
 		if LF := F.codegen(); !LF.IsNil() {
 			LF.Dump()
 		}
@@ -72,7 +71,7 @@ func handleDefinition() {
 }
 
 func handleExtern() {
-	if F := ParseExtern(); F != nil {
+	if F := parseExtern(); F != nil {
 		if LF := F.codegen(); !LF.IsNil() {
 			LF.Dump()
 		}
@@ -82,7 +81,7 @@ func handleExtern() {
 }
 
 func handleTopLevelExpression() {
-	if F := ParseTopLevelExpr(); F != nil {
+	if F := parseTopLevelExpr(); F != nil {
 		if LF := F.codegen(); !LF.IsNil() {
 			LF.Dump()
 			returnval := executionEngine.RunFunction(LF, []llvm.GenericValue{})
