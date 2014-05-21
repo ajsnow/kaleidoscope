@@ -44,6 +44,8 @@ func (n *BinaryExprAST) codegen() llvm.Value {
 		return Builder.CreateFSub(l, r, "subtmp")
 	case '*':
 		return Builder.CreateFMul(l, r, "multmp")
+	case '/':
+		return Builder.CreateFDiv(l, r, "divtmp")
 	case '<':
 		l = Builder.CreateFCmp(llvm.FloatUGT, l, r, "cmptmp")
 		return Builder.CreateUIToFP(l, llvm.FloatType(), "booltmp")

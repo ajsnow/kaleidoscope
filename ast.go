@@ -43,24 +43,16 @@ func ParseIdentifierExpr() ExprAST {
 	}
 
 	// function call
-	token = s.Scan()
 	args := []ExprAST{}
-	if token != ')' {
-		for {
+	for token = s.Scan(); token != ')'; { //token = s.Scan() {
+		switch token {
+		case ',':
+		default:
 			arg := ParseExpression()
 			if arg == nil {
 				return nil
 			}
 			args = append(args, arg)
-
-			if token == ')' {
-				break
-			}
-
-			if token != ',' {
-				return Error("expected ')' or ',' in argument list")
-			}
-			token = s.Scan()
 		}
 	}
 	token = s.Scan()
@@ -77,8 +69,10 @@ func ParsePrimary() ExprAST {
 		return ParseNumericExpr()
 	case '(':
 		return ParseParenExpr()
+	case scanner.EOF:
+		return nil
 	default:
-		return Error(fmt.Sprintln("unknown token when expecting expression:\n\t", token, ":", s.TokenText()))
+		return Error(fmt.Sprint("unknown token when expecting expression: ", token, ":", s.TokenText()))
 	}
 }
 
@@ -87,6 +81,7 @@ var BinaryOpPrecedence = map[rune]int{
 	'+': 20,
 	'-': 20,
 	'*': 40,
+	'/': 40,
 }
 
 func getTokenPrecedence() int {
@@ -144,7 +139,9 @@ func ParsePrototype() *PrototypeAST {
 
 	ArgNames := []string{}
 	for token = s.Scan(); token == scanner.Ident || token == ','; token = s.Scan() {
-		ArgNames = append(ArgNames, s.TokenText())
+		if token != ',' {
+			ArgNames = append(ArgNames, s.TokenText())
+		}
 	}
 	if token != ')' {
 		return ErrorP("expected ')' in prototype")

@@ -38,8 +38,12 @@ func main() {
 // Driver
 
 func theLoop() bool {
-	for token = s.Scan(); token != scanner.EOF; token = s.Scan() {
+	for token = s.Scan(); token != scanner.EOF; {
 		switch token {
+		case ';':
+			token = s.Scan()
+		case scanner.EOF:
+			return true
 		case scanner.Ident:
 			name := s.TokenText()
 			switch name {
@@ -60,7 +64,6 @@ func theLoop() bool {
 func handleDefinition() {
 	if F := ParseDefinition(); F != nil {
 		if LF := F.codegen(); !LF.IsNil() {
-			fmt.Fprint(os.Stderr, "Read function definition:")
 			LF.Dump()
 		}
 	} else {
@@ -71,7 +74,6 @@ func handleDefinition() {
 func handleExtern() {
 	if F := ParseExtern(); F != nil {
 		if LF := F.codegen(); !LF.IsNil() {
-			fmt.Fprint(os.Stderr, "Read extern:")
 			LF.Dump()
 		}
 	} else {
@@ -82,9 +84,9 @@ func handleExtern() {
 func handleTopLevelExpression() {
 	if F := ParseTopLevelExpr(); F != nil {
 		if LF := F.codegen(); !LF.IsNil() {
-			fmt.Fprint(os.Stderr, "Read top-level expression:")
+			LF.Dump()
 			returnval := executionEngine.RunFunction(LF, []llvm.GenericValue{})
-			fmt.Println("Evaluated to", returnval.Float(llvm.DoubleType()))
+			fmt.Println(returnval.Float(llvm.DoubleType()))
 		}
 	} else {
 		s.Scan()
