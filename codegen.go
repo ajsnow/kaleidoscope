@@ -30,28 +30,46 @@ func (n *varAST) codegen() llvm.Value {
 	return v
 }
 
-func (n *binAST) codegen() llvm.Value {
-	l := n.left.codegen()
-	r := n.right.codegen()
-	if l.IsNil() || r.IsNil() {
-		return ErrorV("operand was nil")
+func (n *ifAST) codegen() llvm.Value {
+	// psudeo-Hungarian notation as 'if' & 'else' are Go keywords
+	// also aligns with llvm pkg's func arg names
+	ifv := n.ifE.codegen()
+	if ifv.IsNil() {
+		return ErrorV("code generation failed for if expression")
 	}
+	ifv = Builder.CreateFCmp(llvm.FloatONE, ifv, llvm.ConstFloat(llvm.DoubleType(), 0), "ifcond")
 
-	switch n.op {
-	case '+':
-		return Builder.CreateFAdd(l, r, "addtmp")
-	case '-':
-		return Builder.CreateFSub(l, r, "subtmp")
-	case '*':
-		return Builder.CreateFMul(l, r, "multmp")
-	case '/':
-		return Builder.CreateFDiv(l, r, "divtmp")
-	case '<':
-		l = Builder.CreateFCmp(llvm.FloatUGT, l, r, "cmptmp")
-		return Builder.CreateUIToFP(l, llvm.FloatType(), "booltmp")
-	default:
-		return ErrorV("invalid binary operator")
+	parentFunc := Builder.GetInsertBlock().Parent()
+	thenBlk := llvm.AddBasicBlock(parentFunc, "then")
+	elseBlk := llvm.AddBasicBlock(parentFunc, "else")
+	mergeBlk := llvm.AddBasicBlock(parentFunc, "merge")
+	Builder.CreateCondBr(ifv, thenBlk, elseBlk)
+
+	// generate 'then' block
+	Builder.SetInsertPointAtEnd(thenBlk)
+	thenv := n.thenE.codegen()
+	if thenv.IsNil() {
+		return ErrorV("code generation failid for then expression")
 	}
+	Builder.CreateBr(mergeBlk)
+	// Codegen of 'Then' can change the current block, update ThenBB for the PHI.
+	thenBlk = Builder.GetInsertBlock()
+
+	// generate 'else' block
+	// C++ unknown eq: TheFunction->getBasicBlockList().push_back(ElseBB);
+	Builder.SetInsertPointAtEnd(elseBlk)
+	elsev := n.elseE.codegen()
+	if elsev.IsNil() {
+		return ErrorV("code generation failed for else expression")
+	}
+	Builder.CreateBr(mergeBlk)
+	elseBlk = Builder.GetInsertBlock()
+
+	Builder.SetInsertPointAtEnd(mergeBlk)
+	PhiNode := Builder.CreatePHI(llvm.DoubleType(), "iftmp")
+	PhiNode.AddIncoming([]llvm.Value{thenv}, []llvm.BasicBlock{thenBlk})
+	PhiNode.AddIncoming([]llvm.Value{elsev}, []llvm.BasicBlock{elseBlk})
+	return PhiNode
 }
 
 func (n *callAST) codegen() llvm.Value {
@@ -73,6 +91,30 @@ func (n *callAST) codegen() llvm.Value {
 	}
 
 	return Builder.CreateCall(callee, args, "calltmp")
+}
+
+func (n *binAST) codegen() llvm.Value {
+	l := n.left.codegen()
+	r := n.right.codegen()
+	if l.IsNil() || r.IsNil() {
+		return ErrorV("operand was nil")
+	}
+
+	switch n.op {
+	case '+':
+		return Builder.CreateFAdd(l, r, "addtmp")
+	case '-':
+		return Builder.CreateFSub(l, r, "subtmp")
+	case '*':
+		return Builder.CreateFMul(l, r, "multmp")
+	case '/':
+		return Builder.CreateFDiv(l, r, "divtmp")
+	case '<':
+		l = Builder.CreateFCmp(llvm.FloatOLT, l, r, "cmptmp")
+		return Builder.CreateUIToFP(l, llvm.FloatType(), "booltmp")
+	default:
+		return ErrorV("invalid binary operator")
+	}
 }
 
 func (n *protoAST) codegen() llvm.Value {

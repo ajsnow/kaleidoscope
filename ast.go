@@ -60,13 +60,46 @@ func parseIdentifierExpr() exprAST {
 	return &callAST{name, args}
 }
 
+func parseIfExpr() exprAST {
+	// if
+	token = s.Scan()
+	ifE := parseExpression()
+	if ifE == nil {
+		return Error("expected condition after 'if'")
+	}
+
+	// then
+	if s.TokenText() != "then" {
+		return Error("expected 'then' after if condition")
+	}
+	token = s.Scan()
+	thenE := parseExpression()
+	if thenE == nil {
+		return Error("expected expression after 'then'")
+	}
+
+	// else
+	if s.TokenText() != "else" {
+		return Error("expected 'else' after then expr")
+	}
+	token = s.Scan()
+	elseE := parseExpression()
+	if elseE == nil {
+		return Error("expected expression after 'else'")
+	}
+
+	return &ifAST{ifE, thenE, elseE}
+}
+
 func parsePrimary() exprAST {
 	switch token {
 	case scanner.Ident:
-		return parseIdentifierExpr()
-	case scanner.Int:
-		fallthrough
-	case scanner.Float:
+		if s.TokenText() == "if" {
+			return parseIfExpr()
+		} else {
+			return parseIdentifierExpr()
+		}
+	case scanner.Float, scanner.Int:
 		return parseNumericExpr()
 	case '(':
 		return parseParenExpr()
@@ -217,24 +250,31 @@ type funcAST struct {
 	body  exprAST
 }
 
+type ifAST struct {
+	// psudeo-Hungarian notation as 'if' & 'else' are Go keywords
+	ifE   exprAST
+	thenE exprAST
+	elseE exprAST
+}
+
 // Helpers:
 // error* prints error message and returns 0-values
-func Error(s string) exprAST {
-	fmt.Fprintf(os.Stderr, "Error: %v\n", s)
+func Error(str string) exprAST {
+	fmt.Fprintf(os.Stderr, "Error at %v: %v\n\ttoken: %v\n\ttext:", s.Pos(), str, token, s.TokenText())
 	return nil
 }
 
-func ErrorP(s string) *protoAST {
-	Error(s)
+func ErrorP(str string) *protoAST {
+	Error(str)
 	return nil
 }
 
-func ErrorF(s string) *funcAST {
-	Error(s)
+func ErrorF(str string) *funcAST {
+	Error(str)
 	return nil
 }
 
-func ErrorV(s string) llvm.Value {
-	Error(s)
+func ErrorV(str string) llvm.Value {
+	fmt.Fprintf(os.Stderr, "Error: %v\n", str)
 	return llvm.Value{nil}
 }
