@@ -91,12 +91,65 @@ func parseIfExpr() exprAST {
 	return &ifAST{ifE, thenE, elseE}
 }
 
+func parseForExpr() exprAST {
+	token = s.Scan()
+	if token != scanner.Ident {
+		return Error("expected identifier after 'for'")
+	}
+	counter := s.TokenText()
+
+	token = s.Scan()
+	if token != '=' {
+		return Error("expected '=' after 'for " + counter + "'")
+	}
+
+	token = s.Scan()
+	start := parseExpression()
+	if start == nil {
+		return Error("expected expression after 'for " + counter + " ='")
+	}
+	if token != ',' {
+		return Error("expected ',' after 'for' start expression")
+	}
+
+	token = s.Scan()
+	end := parseExpression()
+	if end == nil {
+		return Error("expected end expression after 'for' start expression")
+	}
+
+	// optional step
+	var step exprAST
+	if token == ',' {
+		token = s.Scan()
+		step = parseExpression()
+		if step == nil {
+			return Error("invalid step expression after 'for'")
+		}
+	}
+
+	if s.TokenText() != "in" {
+		return Error("expected 'in' after 'for' sub-expression")
+	}
+
+	token = s.Scan()
+	body := parseExpression()
+	if body == nil {
+		return Error("expected body expression after 'for ... in'")
+	}
+
+	return &forAST{counter, start, end, step, body}
+}
+
 func parsePrimary() exprAST {
 	switch token {
 	case scanner.Ident:
-		if s.TokenText() == "if" {
+		switch s.TokenText() {
+		case "if":
 			return parseIfExpr()
-		} else {
+		case "for":
+			return parseForExpr()
+		default:
 			return parseIdentifierExpr()
 		}
 	case scanner.Float, scanner.Int:
@@ -255,6 +308,14 @@ type ifAST struct {
 	ifE   exprAST
 	thenE exprAST
 	elseE exprAST
+}
+
+type forAST struct {
+	counter string
+	start   exprAST
+	end     exprAST
+	step    exprAST
+	body    exprAST
 }
 
 // Helpers:

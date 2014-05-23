@@ -49,7 +49,7 @@ func (n *ifAST) codegen() llvm.Value {
 	Builder.SetInsertPointAtEnd(thenBlk)
 	thenv := n.thenE.codegen()
 	if thenv.IsNil() {
-		return ErrorV("code generation failid for then expression")
+		return ErrorV("code generation failed for then expression")
 	}
 	Builder.CreateBr(mergeBlk)
 	// Codegen of 'Then' can change the current block, update ThenBB for the PHI.
@@ -70,6 +70,66 @@ func (n *ifAST) codegen() llvm.Value {
 	PhiNode.AddIncoming([]llvm.Value{thenv}, []llvm.BasicBlock{thenBlk})
 	PhiNode.AddIncoming([]llvm.Value{elsev}, []llvm.BasicBlock{elseBlk})
 	return PhiNode
+}
+
+func (n *forAST) codegen() llvm.Value {
+	startVal := n.start.codegen()
+	if startVal.IsNil() {
+		return ErrorV("code generation failed for start expression")
+	}
+
+	parentFunc := Builder.GetInsertBlock().Parent()
+	headerBlk := Builder.GetInsertBlock()
+	loopBlk := llvm.AddBasicBlock(parentFunc, "loop")
+
+	Builder.CreateBr(loopBlk)
+
+	Builder.SetInsertPointAtEnd(loopBlk)
+	PhiNode := Builder.CreatePHI(llvm.DoubleType(), n.counter)
+	PhiNode.AddIncoming([]llvm.Value{startVal}, []llvm.BasicBlock{headerBlk})
+
+	// save higher levels' variables if we have the same name
+	oldVal := NamedValues[n.counter]
+	NamedValues[n.counter] = PhiNode
+
+	if n.body.codegen().IsNil() { // wtf?
+		return ErrorV("code generation failed for body expression")
+	}
+
+	var stepVal llvm.Value
+	if n.step != nil {
+		stepVal = n.step.codegen()
+		if stepVal.IsNil() {
+			return llvm.ConstNull(llvm.DoubleType())
+		}
+	} else {
+		stepVal = llvm.ConstFloat(llvm.DoubleType(), 1)
+	}
+
+	nextVar := Builder.CreateFAdd(PhiNode, stepVal, "nextvar")
+
+	endVal := n.end.codegen()
+	if endVal.IsNil() {
+		return endVal
+	}
+
+	endVal = Builder.CreateFCmp(llvm.FloatONE, endVal, llvm.ConstFloat(llvm.DoubleType(), 0), "loopcond")
+	loopEndB := Builder.GetInsertBlock()
+	afterBlk := llvm.AddBasicBlock(parentFunc, "afterloop")
+
+	Builder.CreateCondBr(endVal, loopBlk, afterBlk)
+
+	Builder.SetInsertPointAtEnd(afterBlk)
+
+	PhiNode.AddIncoming([]llvm.Value{nextVar}, []llvm.BasicBlock{loopEndB})
+
+	if !oldVal.IsNil() {
+		NamedValues[n.counter] = oldVal
+	} else {
+		delete(NamedValues, n.counter)
+	}
+
+	return llvm.ConstFloat(llvm.DoubleType(), 0)
 }
 
 func (n *callAST) codegen() llvm.Value {
@@ -111,7 +171,7 @@ func (n *binAST) codegen() llvm.Value {
 		return Builder.CreateFDiv(l, r, "divtmp")
 	case '<':
 		l = Builder.CreateFCmp(llvm.FloatOLT, l, r, "cmptmp")
-		return Builder.CreateUIToFP(l, llvm.FloatType(), "booltmp")
+		return Builder.CreateUIToFP(l, llvm.DoubleType(), "booltmp")
 	default:
 		return ErrorV("invalid binary operator")
 	}
