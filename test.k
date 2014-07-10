@@ -17,6 +17,13 @@ cos(pi())
 double(cos(3.14))
 cos(sin(5))
 
+extern putchard(char)           // External func via Cgo C
+putchard(67)
+
+extern goputchard(char)         // External func via Cgo Go
+putchard(71)
+putchard(79)
+
 def x0(d) 1/2 * (1 + d/1)         // Manual Newton's method, for 
 def x1(d) 1/2 * (x0(d) + d/x0(d)) // before we impliment branches.
 def x2(d) 1/2 * (x1(d) + d/x1(d))
@@ -35,7 +42,13 @@ def abc2_c(a, b, c) (b-sqrt(4*a*c-pow(b, 2)))/(2*a)
 abc1_naive(1, 4, 4)  // Let's see how ours compares to the 
 abc1_c(1, 4, 4)      // easy version that uses math.h.
 
+// If Expr
+def fib(x) if x < 3 then 1 else fib(x-1)+fib(x-2)
+fib(20)
 
+// For Loop
+def printstar(n) for i = 1, i < n, 1.0 in putchard(42)
+printstar(5)
 
 // Correct output:
 // 4
@@ -47,5 +60,10 @@ abc1_c(1, 4, 4)      // easy version that uses math.h.
 // -1
 // -1.999997463455079
 // 0.574400879193934
+// C0                   // 'C' printed; 0 returned.
+// G0                   // 'G' printed; 0 returned.
+// O0                   // 'O' printed; 0 returned.
 // 2.00390625           // Didn't bother confirming this.
 // 2
+// 6765
+// *****0               // "*****" printed; 0 returned.
