@@ -3,17 +3,18 @@ package main
 import "github.com/ajsnow/llvm"
 
 var (
-	TheModule            = llvm.NewModule("root")
-	FPM                  = llvm.NewFunctionPassManagerForModule(TheModule)
-	executionEngine, err = llvm.NewExecutionEngine(TheModule)
-	Builder              = llvm.NewBuilder()
-	NamedValues          = map[string]llvm.Value{}
+	TheModule                        = llvm.NewModule("root")
+	FPM                              = llvm.NewFunctionPassManagerForModule(TheModule)
+	unhandledError1                  = llvm.InitializeNativeTarget()
+	executionEngine, unhandledError2 = llvm.NewJITCompiler(TheModule, 0)
+	Builder                          = llvm.NewBuilder()
+	NamedValues                      = map[string]llvm.Value{}
 )
 
-func init() {
-	FPM.AddInstructionCombiningPass()
+func optimize() {
+	FPM.AddInstructionCombiningPass() // this hides that externs are broken in interpret mode
 	FPM.AddReassociatePass()
-	FPM.AddGVNPass()
+	FPM.AddGVNPass() // this hides that externs are broken in interpret mode
 	FPM.AddCFGSimplificationPass()
 	FPM.InitializeFunc()
 }

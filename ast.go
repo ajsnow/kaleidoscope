@@ -337,5 +337,5 @@ func ErrorF(str string) *funcAST {
 
 func ErrorV(str string) llvm.Value {
 	fmt.Fprintf(os.Stderr, "Error: %v\n", str)
-	return llvm.Value{nil}
+	return llvm.Value{nil} // I don't think this is correct.
 }

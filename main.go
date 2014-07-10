@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"flag"
 	"fmt"
 	"os"
 	"text/scanner"
@@ -19,9 +20,19 @@ func check(err error) {
 var s scanner.Scanner
 var token rune
 
+var (
+	verbose   = flag.Bool("v", false, "verbose: dump LLVM codegen")
+	optimized = flag.Bool("opt", false, "add some optimization passes")
+)
+
 func main() {
-	if len(os.Args) == 2 {
-		f, _ := os.Open(os.Args[1])
+	flag.Parse()
+	if *optimized {
+		optimize()
+	}
+
+	if fn := flag.Arg(0); fn != "" {
+		f, _ := os.Open(fn)
 		s.Init(f)
 		mainLoop()
 	}
@@ -62,7 +73,7 @@ func mainLoop() bool {
 
 func handleDefinition() {
 	if F := parseDefinition(); F != nil {
-		if LF := F.codegen(); !LF.IsNil() {
+		if LF := F.codegen(); !LF.IsNil() && *verbose {
 			LF.Dump()
 		}
 	} else {
@@ -72,7 +83,7 @@ func handleDefinition() {
 
 func handleExtern() {
 	if F := parseExtern(); F != nil {
-		if LF := F.codegen(); !LF.IsNil() {
+		if LF := F.codegen(); !LF.IsNil() && *verbose {
 			LF.Dump()
 		}
 	} else {
@@ -83,7 +94,9 @@ func handleExtern() {
 func handleTopLevelExpression() {
 	if F := parseTopLevelExpr(); F != nil {
 		if LF := F.codegen(); !LF.IsNil() {
-			LF.Dump()
+			if *verbose {
+				LF.Dump()
+			}
 			returnval := executionEngine.RunFunction(LF, []llvm.GenericValue{})
 			fmt.Println(returnval.Float(llvm.DoubleType()))
 		}
