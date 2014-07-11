@@ -13,10 +13,17 @@ package main
 
 // #include <stdio.h>
 import "C"
+import "fmt"
 
-//export goputchard
-func goputchard(x C.double) C.double {
+//export cgoputchard
+func cgoputchard(x C.double) C.double {
 	C.putchar(C.int(x))
 	C.fflush(C.stdout)
+	return 0
+}
+
+//export goputchard
+func goputchard(x float64) float64 {
+	fmt.Printf("%c", rune(x))
 	return 0
 }

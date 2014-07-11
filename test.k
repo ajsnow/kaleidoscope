@@ -19,10 +19,10 @@ cos(sin(5))
 
 extern putchard(char)           // External func via Cgo C
 putchard(67)
-
-extern goputchard(char)         // External func via Cgo Go
-putchard(71)
-putchard(79)
+extern cgoputchard(char)        // External func via Cgo Go (via <stdio.h> calls)
+cgoputchard(71)
+extern goputchard(char)         // External func via Cgo Go (via fmt)
+goputchard(79)
 
 def x0(d) 1/2 * (1 + d/1)         // Manual Newton's method, for 
 def x1(d) 1/2 * (x0(d) + d/x0(d)) // before we impliment branches.
