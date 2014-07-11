@@ -1,6 +1,10 @@
 package main
 
-import "github.com/ajsnow/llvm"
+import (
+	"unicode/utf8"
+
+	"github.com/ajsnow/llvm"
+)
 
 var (
 	TheModule                        = llvm.NewModule("root")
@@ -174,7 +178,11 @@ func (n *binAST) codegen() llvm.Value {
 		l = Builder.CreateFCmp(llvm.FloatOLT, l, r, "cmptmp")
 		return Builder.CreateUIToFP(l, llvm.DoubleType(), "booltmp")
 	default:
-		return ErrorV("invalid binary operator")
+		function := TheModule.NamedFunction("binary" + string(n.op))
+		if function.IsNil() {
+			return ErrorV("invalid binary operator")
+		}
+		return Builder.CreateCall(function, []llvm.Value{l, r}, "binop")
 	}
 }
 
@@ -213,6 +221,11 @@ func (n *funcAST) codegen() llvm.Value {
 	theFunction := n.proto.codegen()
 	if theFunction.IsNil() {
 		return ErrorV("prototype")
+	}
+
+	if n.proto.isOperator && len(n.proto.args) == 2 {
+		opChar, _ := utf8.DecodeLastRuneInString(n.proto.name)
+		binaryOpPrecedence[opChar] = n.proto.precedence
 	}
 
 	block := llvm.AddBasicBlock(theFunction, "entry")

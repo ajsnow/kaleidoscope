@@ -12,11 +12,11 @@ import (
 // Parsing Functions
 func parseNumericExpr() exprAST {
 	val, err := strconv.ParseFloat(s.TokenText(), 64)
+	token = s.Scan()
 	if err != nil {
-		return Error("invalid number: " + s.TokenText())
+		return Error("invalid number")
 	}
 	result := &numAST{val}
-	token = s.Scan()
 	return result
 }
 
@@ -159,7 +159,10 @@ func parsePrimary() exprAST {
 	case scanner.EOF:
 		return nil
 	default:
-		return Error(fmt.Sprint("unknown token when expecting expression: ", token, ":", s.TokenText()))
+		oldToken := token
+		oldText := s.TokenText()
+		token = s.Scan()
+		return Error(fmt.Sprint("unknown token when expecting expression: ", oldToken, ":", oldText))
 	}
 }
 
@@ -187,11 +190,9 @@ func parseExpression() exprAST {
 func parseBinaryOpRHS(exprPrec int, lhs exprAST) exprAST {
 	for {
 		tokenPrec := getTokenPrecedence()
-
 		if tokenPrec < exprPrec {
 			return lhs
 		}
-
 		binOp := token
 		token = s.Scan()
 
@@ -220,6 +221,31 @@ func parsePrototype() *protoAST {
 	fnName := s.TokenText()
 	token = s.Scan()
 
+	precedence := 30
+	const (
+		idef = iota
+		unary
+		binary
+	)
+	kind := idef
+
+	switch fnName {
+	case "unary":
+	case "binary":
+		fnName += s.TokenText() // binary^
+		kind = binary
+		token = s.Scan()
+
+		if token == scanner.Int {
+			var err error
+			precedence, err = strconv.Atoi(s.TokenText())
+			if err != nil {
+				return ErrorP("\ninvalid precedence")
+			}
+			token = s.Scan()
+		}
+	}
+
 	if token != '(' {
 		return ErrorP("expected '(' in prototype")
 	}
@@ -235,7 +261,10 @@ func parsePrototype() *protoAST {
 	}
 
 	token = s.Scan()
-	return &protoAST{fnName, ArgNames}
+	if kind != idef && len(ArgNames) != kind {
+		return ErrorP("invalid number of operands for operator")
+	}
+	return &protoAST{fnName, ArgNames, kind != idef, precedence}
 }
 
 func parseDefinition() *funcAST {
@@ -264,7 +293,7 @@ func parseTopLevelExpr() *funcAST {
 	}
 
 	// Make anon proto
-	proto := &protoAST{"", []string{}}
+	proto := &protoAST{"", []string{}, false, 0}
 	return &funcAST{proto, e}
 }
 
@@ -294,8 +323,10 @@ type callAST struct {
 }
 
 type protoAST struct {
-	name string
-	args []string
+	name       string
+	args       []string
+	isOperator bool
+	precedence int
 }
 
 type funcAST struct {
@@ -321,7 +352,7 @@ type forAST struct {
 // Helpers:
 // error* prints error message and returns 0-values
 func Error(str string) exprAST {
-	fmt.Fprintf(os.Stderr, "Error at %v: %v\n\ttoken: %v\n\ttext:", s.Pos(), str, token, s.TokenText())
+	fmt.Fprintf(os.Stderr, "Error at %v: %v\n\ttoken: %v\n\ttext:%v\n", s.Pos(), str, token, s.TokenText())
 	return nil
 }
 

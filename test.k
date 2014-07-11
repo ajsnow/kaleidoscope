@@ -50,6 +50,14 @@ fib(20)
 def printstar(n) for i = 1, i < n, 1.0 in putchard(42)
 printstar(5)
 
+// User-defined Binary Operators
+def binary!(l,r) l * 2 + r / 9
+15 ! 18
+def binary#50(l,r) r*r
+sqrt(2 # (15 ! 74 # sqrt(18)))
+def binary∆(l,r) if l < r then r else l
+32 ∆ 2 ∆ 4 ∆ 16 ∆ 96 ∆ 1
+
 // Correct output:
 // 4
 // 41.9818
@@ -67,3 +75,5 @@ printstar(5)
 // 2
 // 6765
 // *****0               // "*****" printed; 0 returned.
+// 32
+// 32
