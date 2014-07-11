@@ -141,6 +141,21 @@ func parseForExpr() exprAST {
 	return &forAST{counter, start, end, step, body}
 }
 
+func parseUnarty() exprAST {
+	// If we're not an operator, parse as primary
+	if token < -1 || token == '(' || token == ',' {
+		return parsePrimary()
+	}
+
+	name := token
+	token = s.Scan()
+	operand := parseUnarty()
+	if operand != nil {
+		return &unaryAST{name, operand}
+	}
+	return nil
+}
+
 func parsePrimary() exprAST {
 	switch token {
 	case scanner.Ident:
@@ -179,7 +194,7 @@ func getTokenPrecedence() int {
 }
 
 func parseExpression() exprAST {
-	lhs := parsePrimary()
+	lhs := parseUnarty()
 	if lhs == nil {
 		return nil
 	}
@@ -196,7 +211,7 @@ func parseBinaryOpRHS(exprPrec int, lhs exprAST) exprAST {
 		binOp := token
 		token = s.Scan()
 
-		rhs := parsePrimary()
+		rhs := parseUnarty()
 		if rhs == nil {
 			return nil
 		}
@@ -231,6 +246,9 @@ func parsePrototype() *protoAST {
 
 	switch fnName {
 	case "unary":
+		fnName += s.TokenText() // unary^
+		kind = unary
+		token = s.Scan()
 	case "binary":
 		fnName += s.TokenText() // binary^
 		kind = binary
@@ -347,6 +365,11 @@ type forAST struct {
 	end     exprAST
 	step    exprAST
 	body    exprAST
+}
+
+type unaryAST struct {
+	name    rune
+	operand exprAST
 }
 
 // Helpers:

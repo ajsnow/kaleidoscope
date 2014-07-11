@@ -137,6 +137,19 @@ func (n *forAST) codegen() llvm.Value {
 	return llvm.ConstFloat(llvm.DoubleType(), 0)
 }
 
+func (n *unaryAST) codegen() llvm.Value {
+	operandValue := n.operand.codegen()
+	if operandValue.IsNil() {
+		return ErrorV("nil operand")
+	}
+
+	f := TheModule.NamedFunction("unary" + string(n.name))
+	if f.IsNil() {
+		return ErrorV("unknown unary operator")
+	}
+	return Builder.CreateCall(f, []llvm.Value{operandValue}, "unop")
+}
+
 func (n *callAST) codegen() llvm.Value {
 	callee := TheModule.NamedFunction(n.callee)
 	if callee.IsNil() {
