@@ -67,6 +67,21 @@ def mut(x)
     printd(x)
 
 mut(123)
+
+// Declared Variables
+def fibi(x)
+  var a = 1, b = 1, c in
+  (for i = 3, i < x in
+     c = a + b :
+     a = b :
+     b = c ) :
+  b;
+
+
+
+
+
+
 // Correct output:
 // 4
 // 41.9818

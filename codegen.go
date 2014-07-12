@@ -113,7 +113,7 @@ func (n *forAST) codegen() llvm.Value {
 	oldVal := NamedValues[n.counter]
 	NamedValues[n.counter] = alloca
 
-	if n.body.codegen().IsNil() { // wtf?
+	if n.body.codegen().IsNil() {
 		return ErrorV("code generation failed for body expression")
 	}
 
@@ -163,6 +163,45 @@ func (n *unaryAST) codegen() llvm.Value {
 		return ErrorV("unknown unary operator")
 	}
 	return Builder.CreateCall(f, []llvm.Value{operandValue}, "unop")
+}
+
+func (n *varExprAST) codegen() llvm.Value {
+	var oldvars = []llvm.Value{}
+
+	f := Builder.GetInsertBlock().Parent()
+	for i := range n.vars {
+		name := n.vars[i].name
+		node := n.vars[i].node
+
+		var val llvm.Value
+		if node != nil {
+			val = node.codegen()
+			if val.IsNil() {
+				return val // nil
+			}
+		} else { // if no initialized value set to 0
+			val = llvm.ConstFloat(llvm.DoubleType(), 0)
+		}
+
+		alloca := createEntryBlockAlloca(f, name)
+		Builder.CreateStore(val, alloca)
+
+		oldvars = append(oldvars, NamedValues[name])
+		NamedValues[name] = alloca
+	}
+
+	// evaluate body now that vars are in scope
+	bodyVal := n.body.codegen()
+	if bodyVal.IsNil() {
+		return ErrorV("body returns nil") // nil
+	}
+
+	// pop old values
+	for i := range n.vars {
+		NamedValues[n.vars[i].name] = oldvars[i]
+	}
+
+	return bodyVal
 }
 
 func (n *callAST) codegen() llvm.Value {

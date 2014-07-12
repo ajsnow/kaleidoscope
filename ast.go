@@ -156,6 +156,63 @@ func parseUnarty() exprAST {
 	return nil
 }
 
+func parseVarExpr() exprAST {
+	token = s.Scan()
+	var v = varExprAST{
+		vars: []struct {
+			name string
+			node exprAST
+		}{},
+		body: nil,
+	}
+	var val exprAST
+
+	if token != scanner.Ident {
+		return Error("expected identifier after var")
+	}
+
+	for {
+		name := s.TokenText()
+		token = s.Scan()
+
+		// are we initialized?
+		val = nil
+		if token == '=' {
+			token = s.Scan()
+			val = parseExpression()
+			if val == nil {
+				return Error("initialization failed")
+			}
+		}
+		v.vars = append(v.vars, struct {
+			name string
+			node exprAST
+		}{name, val})
+
+		if token != ',' {
+			break
+		}
+		token = s.Scan()
+
+		if token != scanner.Ident {
+			return Error("expected identifier after var")
+		}
+
+	}
+
+	// 'in'
+	if s.TokenText() != "in" {
+		return Error("expected 'in' after 'var'")
+	}
+	token = s.Scan()
+
+	v.body = parseExpression()
+	if v.body == nil {
+		return Error("empty body in var expression")
+	}
+	return &v
+}
+
 func parsePrimary() exprAST {
 	switch token {
 	case scanner.Ident:
@@ -164,6 +221,8 @@ func parsePrimary() exprAST {
 			return parseIfExpr()
 		case "for":
 			return parseForExpr()
+		case "var":
+			return parseVarExpr()
 		default:
 			return parseIdentifierExpr()
 		}
@@ -371,6 +430,14 @@ type forAST struct {
 type unaryAST struct {
 	name    rune
 	operand exprAST
+}
+
+type varExprAST struct {
+	vars []struct {
+		name string
+		node exprAST
+	}
+	body exprAST
 }
 
 // Helpers:
