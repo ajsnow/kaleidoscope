@@ -76,13 +76,9 @@ def fibi(x)
      a = b :
      b = c ) :
   b;
+fibi(20)
 
-
-
-
-
-
-// Correct output:
+// Expected output:
 // 4
 // 41.9818
 // 38
@@ -105,3 +101,4 @@ def fibi(x)
 // 123
 // 4
 // 0
+// 6765
