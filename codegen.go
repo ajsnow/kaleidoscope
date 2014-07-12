@@ -187,6 +187,28 @@ func (n *callAST) codegen() llvm.Value {
 }
 
 func (n *binAST) codegen() llvm.Value {
+	// Special case '=' because we don't emit the LHS as an expression
+	if n.op == '=' {
+		l, ok := n.left.(*varAST)
+		if !ok {
+			return ErrorV("destination of '=' must be a variable")
+		}
+
+		// get value
+		val := n.right.codegen()
+		if val.IsNil() {
+			return ErrorV("cannot assign null value")
+		}
+
+		// lookup location of variable from name
+		p := NamedValues[l.name]
+
+		// store
+		Builder.CreateStore(val, p)
+
+		return val
+	}
+
 	l := n.left.codegen()
 	r := n.right.codegen()
 	if l.IsNil() || r.IsNil() {

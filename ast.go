@@ -182,6 +182,7 @@ func parsePrimary() exprAST {
 }
 
 var binaryOpPrecedence = map[rune]int{
+	'=': 2,
 	'<': 10,
 	'+': 20,
 	'-': 20,
