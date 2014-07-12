@@ -127,14 +127,15 @@ func (n *forAST) codegen() llvm.Value {
 		stepVal = llvm.ConstFloat(llvm.DoubleType(), 1)
 	}
 
-	curVar := Builder.CreateLoad(alloca, n.counter)
-	nextVar := Builder.CreateFAdd(curVar, stepVal, "nextvar")
-	Builder.CreateStore(nextVar, alloca)
-
+	// evaluate end condition before increment
 	endVal := n.end.codegen()
 	if endVal.IsNil() {
 		return endVal
 	}
+
+	curVar := Builder.CreateLoad(alloca, n.counter)
+	nextVar := Builder.CreateFAdd(curVar, stepVal, "nextvar")
+	Builder.CreateStore(nextVar, alloca)
 
 	endVal = Builder.CreateFCmp(llvm.FloatONE, endVal, llvm.ConstFloat(llvm.DoubleType(), 0), "loopcond")
 	afterBlk := llvm.AddBasicBlock(parentFunc, "afterloop")
