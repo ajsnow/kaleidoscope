@@ -16,11 +16,28 @@ var (
 )
 
 func optimize() {
-	FPM.AddInstructionCombiningPass() // this hides that externs are broken in interpret mode
+	FPM.Add(executionEngine.TargetData())
+	FPM.AddPromoteMemoryToRegisterPass()
+	FPM.AddInstructionCombiningPass()
 	FPM.AddReassociatePass()
-	FPM.AddGVNPass() // this hides that externs are broken in interpret mode
+	FPM.AddGVNPass()
 	FPM.AddCFGSimplificationPass()
 	FPM.InitializeFunc()
+}
+
+func createEntryBlockAlloca(f llvm.Value, name string) llvm.Value {
+	var TmpB = llvm.NewBuilder()
+	TmpB.SetInsertPoint(f.EntryBasicBlock(), f.EntryBasicBlock().FirstInstruction())
+	return TmpB.CreateAlloca(llvm.DoubleType(), name)
+}
+
+func (n *protoAST) createArgAlloca(f llvm.Value) {
+	args := f.Params()
+	for i := range args {
+		alloca := createEntryBlockAlloca(f, n.args[i])
+		Builder.CreateStore(args[i], alloca)
+		NamedValues[n.args[i]] = alloca
+	}
 }
 
 func (n *numAST) codegen() llvm.Value {
@@ -32,7 +49,7 @@ func (n *varAST) codegen() llvm.Value {
 	if v.IsNil() {
 		return ErrorV("unknown variable name")
 	}
-	return v
+	return Builder.CreateLoad(v, n.name)
 }
 
 func (n *ifAST) codegen() llvm.Value {
@@ -84,18 +101,17 @@ func (n *forAST) codegen() llvm.Value {
 	}
 
 	parentFunc := Builder.GetInsertBlock().Parent()
-	headerBlk := Builder.GetInsertBlock()
+	alloca := createEntryBlockAlloca(parentFunc, n.counter)
+	Builder.CreateStore(startVal, alloca)
 	loopBlk := llvm.AddBasicBlock(parentFunc, "loop")
 
 	Builder.CreateBr(loopBlk)
 
 	Builder.SetInsertPointAtEnd(loopBlk)
-	PhiNode := Builder.CreatePHI(llvm.DoubleType(), n.counter)
-	PhiNode.AddIncoming([]llvm.Value{startVal}, []llvm.BasicBlock{headerBlk})
 
 	// save higher levels' variables if we have the same name
 	oldVal := NamedValues[n.counter]
-	NamedValues[n.counter] = PhiNode
+	NamedValues[n.counter] = alloca
 
 	if n.body.codegen().IsNil() { // wtf?
 		return ErrorV("code generation failed for body expression")
@@ -111,7 +127,9 @@ func (n *forAST) codegen() llvm.Value {
 		stepVal = llvm.ConstFloat(llvm.DoubleType(), 1)
 	}
 
-	nextVar := Builder.CreateFAdd(PhiNode, stepVal, "nextvar")
+	curVar := Builder.CreateLoad(alloca, n.counter)
+	nextVar := Builder.CreateFAdd(curVar, stepVal, "nextvar")
+	Builder.CreateStore(nextVar, alloca)
 
 	endVal := n.end.codegen()
 	if endVal.IsNil() {
@@ -119,14 +137,11 @@ func (n *forAST) codegen() llvm.Value {
 	}
 
 	endVal = Builder.CreateFCmp(llvm.FloatONE, endVal, llvm.ConstFloat(llvm.DoubleType(), 0), "loopcond")
-	loopEndB := Builder.GetInsertBlock()
 	afterBlk := llvm.AddBasicBlock(parentFunc, "afterloop")
 
 	Builder.CreateCondBr(endVal, loopBlk, afterBlk)
 
 	Builder.SetInsertPointAtEnd(afterBlk)
-
-	PhiNode.AddIncoming([]llvm.Value{nextVar}, []llvm.BasicBlock{loopEndB})
 
 	if !oldVal.IsNil() {
 		NamedValues[n.counter] = oldVal
@@ -243,6 +258,8 @@ func (n *funcAST) codegen() llvm.Value {
 
 	block := llvm.AddBasicBlock(theFunction, "entry")
 	Builder.SetInsertPointAtEnd(block)
+
+	n.proto.createArgAlloca(theFunction)
 
 	retVal := n.body.codegen()
 	if retVal.IsNil() {
