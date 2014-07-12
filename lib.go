@@ -27,3 +27,11 @@ func goputchard(x float64) float64 {
 	fmt.Printf("%c", rune(x))
 	return 0
 }
+
+// Helpers:
+
+//export printd
+func printd(x float64) float64 {
+	fmt.Println(x)
+	return 0
+}

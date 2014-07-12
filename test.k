@@ -58,6 +58,15 @@ sqrt(2 # (15 ! 74 # sqrt(18)))
 def binary∆(l,r) if l < r then r else l
 32 ∆ 2 ∆ 4 ∆ 16 ∆ 96 ∆ 1
 
+// Mutable Variables
+extern printd(x)
+def binary:1(x,y) y
+def mut(x) 
+    printd(x) : 
+    x = 4 :
+    printd(x)
+
+mut(123)
 // Correct output:
 // 4
 // 41.9818
@@ -77,3 +86,7 @@ def binary∆(l,r) if l < r then r else l
 // *****0               // "*****" printed; 0 returned.
 // 32
 // 32
+// 96
+// 123
+// 4
+// 0
