@@ -29,7 +29,7 @@ func (t *token) String() string {
 	case len(t.val) > 10:
 		return fmt.Sprintf("%.10q...", t.val) // Limit the max width for long tokens
 	case t.kind == tokSpace:
-		return "space, the most useful token"
+		return "_"
 	default:
 		return t.val
 	}
@@ -66,6 +66,8 @@ const (
 	tokElse
 	tokFor
 	tokIn
+	tokBinary
+	tokUnary
 	tokVar
 
 	// operators
@@ -87,6 +89,8 @@ var key = map[string]tokenType{
 	"else":   tokElse,
 	"for":    tokFor,
 	"in":     tokIn,
+	"binary": tokBinary,
+	"unary":  tokUnary,
 	"var":    tokVar,
 }
 
@@ -98,6 +102,18 @@ var op = map[rune]tokenType{
 	'/': tokSlash,
 	'<': tokLessThan,
 }
+
+// uopType differentiates a user-defined unary, binary or not found operator.
+type uopType int
+
+const (
+	uopNOP uopType = iota
+	uopUnaryOp
+	uopBinaryOp
+)
+
+// uop maps user defined operators number of operands
+var uop = map[rune]uopType{}
 
 const eof = -1
 
@@ -187,7 +203,7 @@ func lex(name, input string) *lexer {
 	l := &lexer{
 		name:   name,
 		input:  input,
-		tokens: make(chan token),
+		tokens: make(chan token, 10),
 	}
 	go l.run()
 	return l
@@ -211,12 +227,19 @@ func lexTopLevel(l *lexer) stateFn {
 	r := l.next()
 	switch {
 	case r == eof:
+		l.emit(tokEOF)
 		return nil
 	case isSpace(r):
 		l.backup() // could be a single space
 		return lexSpace
 	case isEOL(r):
 		l.start = l.pos
+		return lexTopLevel
+	case r == ';':
+		l.emit(tokSemicolon)
+		return lexTopLevel
+	case r == ',':
+		l.emit(tokComma)
 		return lexTopLevel
 	case r == '#':
 		return lexComment
@@ -237,14 +260,18 @@ func lexTopLevel(l *lexer) stateFn {
 	case isAlphaNumeric(r):
 		l.backup()
 		return lexIdentifer
+	case op[r] > tokUserBinaryOp:
+		l.emit(op[r])
+		return lexTopLevel
+	case uop[r] == uopBinaryOp:
+		l.emit(tokUserBinaryOp)
+		return lexTopLevel
+	case uop[r] == uopUnaryOp:
+		l.emit(tokUserUnaryOp)
+		return lexTopLevel
 	default:
-		// since the user can define arbitrary single-rune operators, anything else could be valid
-		// e.g. "∆ ¿¡ 7 !? <-- what" could be a perfectly valid expression
-		l.backup()
-		return lexOperator
-		// return l.errorf("unrecognized character: %#U", r)
+		return l.errorf("unrecognized character: %#U", r)
 	}
-	return l.errorf("This shouldn't happen!")
 }
 
 func lexSpace(l *lexer) stateFn {
@@ -264,7 +291,7 @@ func lexComment(l *lexer) stateFn {
 }
 
 func lexNumber(l *lexer) stateFn {
-	numberish := "0123456789-+.xabcdefABCDEF" // let the parser check for errors.
+	numberish := "0123456789.-+xabcdefABCDEF" // let the parser check for errors.
 	l.acceptRun(numberish)
 	// if isAlphaNumeric(l.peek()) { // probably a mistyped identifier
 	// 	l.next()
@@ -278,30 +305,27 @@ func lexIdentifer(l *lexer) stateFn {
 Loop:
 	for {
 		switch r := l.next(); {
-		case isAlphaNumeric(r): // current fails for binary∆ / unary etc
+		case isAlphaNumeric(r):
 			// absorb
 		default:
 			l.backup()
 			word := l.input[l.start:l.pos]
 			if key[word] > tokKeyword {
 				l.emit(key[word])
+				switch word {
+				case "binary":
+					r = l.peek()
+					uop[r] = uopBinaryOp
+				case "unary":
+					r = l.peek()
+					uop[r] = uopBinaryOp
+				}
 			} else {
 				l.emit(tokIdentifier)
 			}
 			break Loop
 		}
 	}
-	return lexTopLevel
-}
-
-//BROKEN!
-func lexOperator(l *lexer) stateFn {
-	r := l.next()
-	if op[r] > tokUserBinaryOp {
-		l.emit(op[r])
-		return lexTopLevel
-	}
-	l.emit(tokUserBinaryOp)
 	return lexTopLevel
 }
 

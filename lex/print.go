@@ -13,7 +13,9 @@ func main() {
 		str := string(bytes)
 		l := lex(fn, str)
 		for tok := range l.tokens {
-			fmt.Println(tok.String())
+			if tok.kind != tokSpace {
+				fmt.Println(tok)
+			}
 		}
 	}
 }
