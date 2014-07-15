@@ -68,7 +68,7 @@ const (
 	tokIn
 	tokBinary
 	tokUnary
-	tokVar
+	tokVariable
 
 	// operators
 	tokUserUnaryOp
@@ -91,7 +91,7 @@ var key = map[string]tokenType{
 	"in":     tokIn,
 	"binary": tokBinary,
 	"unary":  tokUnary,
-	"var":    tokVar,
+	"var":    tokVariable,
 }
 
 var op = map[rune]tokenType{
@@ -117,32 +117,32 @@ var uop = map[rune]uopType{}
 
 const eof = -1
 
-// -- move to ast --
-// Pos defines a byte offset from the beginning of the input text.
-type Pos int
-
-func (p Pos) Position() Pos {
-	return p
-}
-
-// In text/template/parse/node.go Rob adds an unexported() method to Pos
-// I do know why he did that rather than make Pos -> pos
-// -- end move to ast --
-
 // stateFn represents the state of the scanner as a function that returns the next state.
 type stateFn func(*lexer) stateFn
 
 // lexer holds the state of the scanner.
 type lexer struct {
-	name       string     // name of input file; used in error reports
-	input      string     // input being scanned
-	state      stateFn    // next lexing function to be called
-	pos        Pos        // current position in input
-	start      Pos        // beginning position of the current token
-	width      Pos        // width of last rune read from input
-	lastPos    Pos        // position of most recent token returned from lexNext
-	tokens     chan token // channel of lexed items
-	parenDepth int        // nested layers of paren expressions
+	name  string  // name of input file; used in error reports
+	input string  // input being scanned
+	state stateFn // next lexing function to be called
+	pos   Pos     // current position in input
+	start Pos     // beginning position of the current token
+	width Pos     // width of last rune read from input
+	// lastPos    Pos          // position of most recent token returned from lexNext
+	tokens     chan<- token // channel of lexed items
+	parenDepth int          // nested layers of paren expressions
+}
+
+// Lex creates and runs a new lexer from the input string.
+func Lex(name, input string) <-chan token {
+	ch := make(chan token, 10)
+	l := &lexer{
+		name:   name,
+		input:  input,
+		tokens: ch,
+	}
+	go l.run()
+	return ch
 }
 
 // next returns the next rune from the input.
@@ -196,17 +196,6 @@ func (l *lexer) emit(tt tokenType) {
 		val:  l.input[l.start:l.pos],
 	}
 	l.start = l.pos
-}
-
-// lex creates and runs a new lexer from the input string.
-func lex(name, input string) *lexer {
-	l := &lexer{
-		name:   name,
-		input:  input,
-		tokens: make(chan token, 10),
-	}
-	go l.run()
-	return l
 }
 
 // run runs the state machine for the lexer.

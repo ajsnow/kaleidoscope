@@ -11,8 +11,8 @@ func main() {
 	if fn := flag.Arg(0); fn != "" {
 		bytes, _ := ioutil.ReadFile(fn)
 		str := string(bytes)
-		l := lex(fn, str)
-		for tok := range l.tokens {
+		ch := Lex(fn, str)
+		for tok := range ch {
 			if tok.kind != tokSpace {
 				fmt.Println(tok)
 			}

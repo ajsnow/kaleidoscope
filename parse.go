@@ -9,6 +9,69 @@ import (
 	"github.com/ajsnow/llvm"
 )
 
+type tree struct {
+	name               string
+	tokens             <-chan token
+	token              token
+	root               *listNode
+	binaryOpPrecedence map[rune]int
+}
+
+func NewTree(name string, tokens <-chan token) *tree {
+	return &tree{
+		name:   name,
+		tokens: tokens,
+		binaryOpPrecedence: map[rune]int{
+			'=': 2,
+			'<': 10,
+			'+': 20,
+			'-': 20,
+			'*': 40,
+			'/': 40,
+		},
+	}
+}
+
+func (t *tree) Parse() {
+	for token := t.next(); token != tokEOF && token != tokError; token = t.next() {
+		t.root.nodes = append(t.root.nodes, t.parseTopLevel())
+	}
+}
+
+func (t *tree) next() token {
+	t.token <- t.tokens
+	return t.token
+}
+
+func (t *tree) parseTopLevel() node {
+	switch t.token.kind {
+	case tokDefine:
+		return parseDefinition()
+	case tokExtern:
+		return parseExtern()
+	default:
+		return parseTopLevelExpr()
+	}
+}
+
+func (t *tree) parseTopLevelExpr() node {
+	pos = t.token.pos
+	e := parseExpression()
+	if e == nil {
+		return nil
+	}
+	p := &fnPrototypeNode{nodeFnPrototype, pos} // everything else zero valued
+	f := &functionNode{nodeFunction, pos, p, e}
+	return f
+}
+
+func (t *tree) parseExtern() node {
+	t.next()
+}
+
+// automagically move ../ast.go into here and convert the functions.
+////////
+
 // Parsing Functions
 func parseNumericExpr() exprAST {
 	val, err := strconv.ParseFloat(s.TokenText(), 64)
@@ -373,71 +436,6 @@ func parseTopLevelExpr() *funcAST {
 	// Make anon proto
 	proto := &protoAST{"", []string{}, false, 0}
 	return &funcAST{proto, e}
-}
-
-// AST Nodes
-
-type exprAST interface {
-	codegen() llvm.Value
-}
-
-type numAST struct {
-	val float64
-}
-
-type varAST struct {
-	name string
-}
-
-type binAST struct {
-	op    rune
-	left  exprAST
-	right exprAST
-}
-
-type callAST struct {
-	callee string
-	args   [](exprAST)
-}
-
-type protoAST struct {
-	name       string
-	args       []string
-	isOperator bool
-	precedence int
-}
-
-type funcAST struct {
-	proto *protoAST
-	body  exprAST
-}
-
-type ifAST struct {
-	// psudeo-Hungarian notation as 'if' & 'else' are Go keywords
-	ifE   exprAST
-	thenE exprAST
-	elseE exprAST
-}
-
-type forAST struct {
-	counter string
-	start   exprAST
-	end     exprAST
-	step    exprAST
-	body    exprAST
-}
-
-type unaryAST struct {
-	name    rune
-	operand exprAST
-}
-
-type varExprAST struct {
-	vars []struct {
-		name string
-		node exprAST
-	}
-	body exprAST
 }
 
 // Helpers:
