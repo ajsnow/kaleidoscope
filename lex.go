@@ -280,7 +280,7 @@ func lexComment(l *lexer) stateFn {
 }
 
 func lexNumber(l *lexer) stateFn {
-	numberish := "0123456789.-+xabcdefABCDEF" // let the parser check for errors.
+	numberish := "0123456789.xabcdefABCDEF" // let the parser check for errors. note: cannot have "." operator
 	l.acceptRun(numberish)
 	// if isAlphaNumeric(l.peek()) { // probably a mistyped identifier
 	// 	l.next()
@@ -303,11 +303,9 @@ Loop:
 				l.emit(key[word])
 				switch word {
 				case "binary":
-					r = l.peek()
-					uop[r] = uopBinaryOp
+					return lexUserBinaryOp
 				case "unary":
-					r = l.peek()
-					uop[r] = uopBinaryOp
+					return lexUserUnaryOp
 				}
 			} else {
 				l.emit(tokIdentifier)
@@ -315,6 +313,28 @@ Loop:
 			break Loop
 		}
 	}
+	return lexTopLevel
+}
+
+func lexUserBinaryOp(l *lexer) stateFn {
+	for isSpace(l.next()) {
+	}
+	l.backup()
+	l.emit(tokSpace)
+	r := l.next() // no multi-char operators
+	uop[r] = uopBinaryOp
+	l.emit(tokUserBinaryOp)
+	return lexTopLevel
+}
+
+func lexUserUnaryOp(l *lexer) stateFn {
+	for isSpace(l.next()) {
+	}
+	l.backup()
+	l.emit(tokSpace)
+	r := l.next() // no multi-char operators
+	uop[r] = uopUnaryOp
+	l.emit(tokUserUnaryOp)
 	return lexTopLevel
 }
 
