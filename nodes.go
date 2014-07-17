@@ -1,16 +1,12 @@
 package main
 
-import (
-	"github.com/ajsnow/llvm"
-)
-
 // Node Nodes
 
 type node interface {
-	kind() nodeType
+	Kind() nodeType
 	// String() string
-	position() Pos
-	codegen() llvm.Value
+	Position() Pos
+	// codegen() llvm.Value
 }
 
 type nodeType int
@@ -26,7 +22,7 @@ func (p Pos) Position() Pos {
 // I do know why he did that rather than make Pos -> pos
 
 // Type returns itself, embedding into Nodes
-func (t nodeType) kind() nodeType {
+func (t nodeType) Kind() nodeType {
 	return t
 }
 
@@ -105,7 +101,7 @@ type unaryNode struct {
 	nodeType
 	Pos
 
-	name    rune
+	name    string
 	operand node
 }
 
@@ -113,7 +109,7 @@ type binaryNode struct {
 	nodeType
 	Pos
 
-	op    rune
+	op    string
 	left  node
 	right node
 }
@@ -133,7 +129,7 @@ type variableNode struct {
 	name string
 }
 
-type variablenode struct {
+type variableExprNode struct {
 	nodeType
 	Pos
 

@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"strconv"
-	"text/scanner"
 
 	"github.com/ajsnow/llvm"
 )
@@ -14,350 +13,97 @@ type tree struct {
 	tokens             <-chan token
 	token              token
 	root               *listNode
-	binaryOpPrecedence map[rune]int
+	binaryOpPrecedence map[string]int
 }
 
 func NewTree(name string, tokens <-chan token) *tree {
 	return &tree{
 		name:   name,
 		tokens: tokens,
-		binaryOpPrecedence: map[rune]int{
-			'=': 2,
-			'<': 10,
-			'+': 20,
-			'-': 20,
-			'*': 40,
-			'/': 40,
+		root:   &listNode{nodeList, 0, []node{}},
+		binaryOpPrecedence: map[string]int{
+			"=": 2,
+			"<": 10,
+			"+": 20,
+			"-": 20,
+			"*": 40,
+			"/": 40,
 		},
 	}
 }
 
-func (t *tree) Parse() {
-	for token := t.next(); token != tokEOF && token != tokError; token = t.next() {
-		t.root.nodes = append(t.root.nodes, t.parseTopLevel())
+func (t *tree) Parse() bool {
+	for t.next(); t.token.kind != tokEOF && t.token.kind != tokError; { //t.next() { // may want/need to switch this back once i introduce statement delineation
+		node := t.parseTopLevelStmt()
+		if node != nil {
+			t.root.nodes = append(t.root.nodes, node)
+		} else {
+			fmt.Println("Nil top level node near:", t.token.pos)
+		}
 	}
+	return true
 }
 
 func (t *tree) next() token {
-	t.token <- t.tokens
+	t.token = <-t.tokens
+	for t.token.kind == tokSpace || t.token.kind == tokComment || t.token.kind == tokSemicolon {
+		t.token = <-t.tokens
+	}
 	return t.token
 }
 
-func (t *tree) parseTopLevel() node {
+func (t *tree) parseTopLevelStmt() node {
 	switch t.token.kind {
 	case tokDefine:
-		return parseDefinition()
+		return t.parseDefinition()
 	case tokExtern:
-		return parseExtern()
+		return t.parseExtern()
 	default:
-		return parseTopLevelExpr()
+		return t.parseTopLevelExpr()
 	}
 }
 
-func (t *tree) parseTopLevelExpr() node {
-	pos = t.token.pos
-	e := parseExpression()
+func (t *tree) parseDefinition() node {
+	pos := t.token.pos
+	t.next()
+	p := t.parsePrototype()
+	if p == nil {
+		return nil
+	}
+
+	e := t.parseExpression()
 	if e == nil {
 		return nil
 	}
-	p := &fnPrototypeNode{nodeFnPrototype, pos} // everything else zero valued
-	f := &functionNode{nodeFunction, pos, p, e}
-	return f
+	return &functionNode{nodeFunction, pos, p, e}
 }
 
 func (t *tree) parseExtern() node {
 	t.next()
+	return t.parsePrototype()
 }
 
-// automagically move ../ast.go into here and convert the functions.
-////////
-
-// Parsing Functions
-func parseNumericExpr() exprAST {
-	val, err := strconv.ParseFloat(s.TokenText(), 64)
-	token = s.Scan()
-	if err != nil {
-		return Error("invalid number")
-	}
-	result := &numAST{val}
-	return result
-}
-
-func parseParenExpr() exprAST {
-	token = s.Scan()
-	v := parseExpression()
-	if v == nil {
+func (t *tree) parseTopLevelExpr() node {
+	pos := t.token.pos
+	e := t.parseExpression()
+	if e == nil {
 		return nil
 	}
-
-	if token != ')' {
-		return Error("expected ')'")
-	}
-	token = s.Scan()
-	return v
+	p := &fnPrototypeNode{nodeFnPrototype, pos, "", nil, false, 0} // fnName, ArgNames, kind != idef, precedence}
+	f := &functionNode{nodeFunction, pos, p, e}
+	return f
 }
 
-func parseIdentifierExpr() exprAST {
-	name := s.TokenText()
-
-	token = s.Scan()
-	if token != '(' { // variable reference
-		return &varAST{name}
+func (t *tree) parsePrototype() node {
+	pos := t.token.pos
+	if t.token.kind != tokIdentifier &&
+		t.token.kind != tokBinary &&
+		t.token.kind != tokUnary {
+		return Error(t.token, "expected function name in prototype")
 	}
 
-	// function call
-	args := []exprAST{}
-	for token = s.Scan(); token != ')'; { //token = s.Scan() {
-		switch token {
-		case ',':
-			token = s.Scan()
-		default:
-			arg := parseExpression()
-			if arg == nil {
-				return nil
-			}
-			args = append(args, arg)
-		}
-	}
-	token = s.Scan()
-	return &callAST{name, args}
-}
-
-func parseIfExpr() exprAST {
-	// if
-	token = s.Scan()
-	ifE := parseExpression()
-	if ifE == nil {
-		return Error("expected condition after 'if'")
-	}
-
-	// then
-	if s.TokenText() != "then" {
-		return Error("expected 'then' after if condition")
-	}
-	token = s.Scan()
-	thenE := parseExpression()
-	if thenE == nil {
-		return Error("expected expression after 'then'")
-	}
-
-	// else
-	if s.TokenText() != "else" {
-		return Error("expected 'else' after then expr")
-	}
-	token = s.Scan()
-	elseE := parseExpression()
-	if elseE == nil {
-		return Error("expected expression after 'else'")
-	}
-
-	return &ifAST{ifE, thenE, elseE}
-}
-
-func parseForExpr() exprAST {
-	token = s.Scan()
-	if token != scanner.Ident {
-		return Error("expected identifier after 'for'")
-	}
-	counter := s.TokenText()
-
-	token = s.Scan()
-	if token != '=' {
-		return Error("expected '=' after 'for " + counter + "'")
-	}
-
-	token = s.Scan()
-	start := parseExpression()
-	if start == nil {
-		return Error("expected expression after 'for " + counter + " ='")
-	}
-	if token != ',' {
-		return Error("expected ',' after 'for' start expression")
-	}
-
-	token = s.Scan()
-	end := parseExpression()
-	if end == nil {
-		return Error("expected end expression after 'for' start expression")
-	}
-
-	// optional step
-	var step exprAST
-	if token == ',' {
-		token = s.Scan()
-		step = parseExpression()
-		if step == nil {
-			return Error("invalid step expression after 'for'")
-		}
-	}
-
-	if s.TokenText() != "in" {
-		return Error("expected 'in' after 'for' sub-expression")
-	}
-
-	token = s.Scan()
-	body := parseExpression()
-	if body == nil {
-		return Error("expected body expression after 'for ... in'")
-	}
-
-	return &forAST{counter, start, end, step, body}
-}
-
-func parseUnarty() exprAST {
-	// If we're not an operator, parse as primary
-	if token < -1 || token == '(' || token == ',' {
-		return parsePrimary()
-	}
-
-	name := token
-	token = s.Scan()
-	operand := parseUnarty()
-	if operand != nil {
-		return &unaryAST{name, operand}
-	}
-	return nil
-}
-
-func parseVarExpr() exprAST {
-	token = s.Scan()
-	var v = varExprAST{
-		vars: []struct {
-			name string
-			node exprAST
-		}{},
-		body: nil,
-	}
-	var val exprAST
-
-	if token != scanner.Ident {
-		return Error("expected identifier after var")
-	}
-
-	for {
-		name := s.TokenText()
-		token = s.Scan()
-
-		// are we initialized?
-		val = nil
-		if token == '=' {
-			token = s.Scan()
-			val = parseExpression()
-			if val == nil {
-				return Error("initialization failed")
-			}
-		}
-		v.vars = append(v.vars, struct {
-			name string
-			node exprAST
-		}{name, val})
-
-		if token != ',' {
-			break
-		}
-		token = s.Scan()
-
-		if token != scanner.Ident {
-			return Error("expected identifier after var")
-		}
-
-	}
-
-	// 'in'
-	if s.TokenText() != "in" {
-		return Error("expected 'in' after 'var'")
-	}
-	token = s.Scan()
-
-	v.body = parseExpression()
-	if v.body == nil {
-		return Error("empty body in var expression")
-	}
-	return &v
-}
-
-func parsePrimary() exprAST {
-	switch token {
-	case scanner.Ident:
-		switch s.TokenText() {
-		case "if":
-			return parseIfExpr()
-		case "for":
-			return parseForExpr()
-		case "var":
-			return parseVarExpr()
-		default:
-			return parseIdentifierExpr()
-		}
-	case scanner.Float, scanner.Int:
-		return parseNumericExpr()
-	case '(':
-		return parseParenExpr()
-	case scanner.EOF:
-		return nil
-	default:
-		oldToken := token
-		oldText := s.TokenText()
-		token = s.Scan()
-		return Error(fmt.Sprint("unknown token when expecting expression: ", oldToken, ":", oldText))
-	}
-}
-
-var binaryOpPrecedence = map[rune]int{
-	'=': 2,
-	'<': 10,
-	'+': 20,
-	'-': 20,
-	'*': 40,
-	'/': 40,
-}
-
-func getTokenPrecedence() int {
-	return binaryOpPrecedence[token]
-}
-
-func parseExpression() exprAST {
-	lhs := parseUnarty()
-	if lhs == nil {
-		return nil
-	}
-
-	return parseBinaryOpRHS(1, lhs)
-}
-
-func parseBinaryOpRHS(exprPrec int, lhs exprAST) exprAST {
-	for {
-		tokenPrec := getTokenPrecedence()
-		if tokenPrec < exprPrec {
-			return lhs
-		}
-		binOp := token
-		token = s.Scan()
-
-		rhs := parseUnarty()
-		if rhs == nil {
-			return nil
-		}
-
-		nextPrec := getTokenPrecedence()
-		if tokenPrec < nextPrec {
-			rhs = parseBinaryOpRHS(tokenPrec+1, rhs)
-			if rhs == nil {
-				return nil
-			}
-		}
-
-		lhs = &binAST{binOp, lhs, rhs}
-	}
-}
-
-func parsePrototype() *protoAST {
-	if token != scanner.Ident {
-		return ErrorP("expected function name in prototype")
-	}
-
-	fnName := s.TokenText()
-	token = s.Scan()
+	fnName := t.token.val
+	t.next()
 
 	precedence := 30
 	const (
@@ -369,89 +115,324 @@ func parsePrototype() *protoAST {
 
 	switch fnName {
 	case "unary":
-		fnName += s.TokenText() // unary^
+		fnName += t.token.val // unary^
 		kind = unary
-		token = s.Scan()
+		t.next()
 	case "binary":
-		fnName += s.TokenText() // binary^
+		fnName += t.token.val // binary^
+		op := t.token.val
 		kind = binary
-		token = s.Scan()
+		t.next()
 
-		if token == scanner.Int {
+		if t.token.kind == tokNumber {
 			var err error
-			precedence, err = strconv.Atoi(s.TokenText())
+			precedence, err = strconv.Atoi(t.token.val)
 			if err != nil {
-				return ErrorP("\ninvalid precedence")
+				return Error(t.token, "\ninvalid precedence")
 			}
-			token = s.Scan()
+			t.next()
 		}
+		t.binaryOpPrecedence[op] = precedence // make sure to take this out of codegen later if we're going to keep it here.
 	}
 
-	if token != '(' {
-		return ErrorP("expected '(' in prototype")
+	if t.token.kind != tokLeftParen {
+		return Error(t.token, "expected '(' in prototype")
 	}
 
 	ArgNames := []string{}
-	for token = s.Scan(); token == scanner.Ident || token == ','; token = s.Scan() {
-		if token != ',' {
-			ArgNames = append(ArgNames, s.TokenText())
+	for t.next(); t.token.kind == tokIdentifier || t.token.kind == tokComma; t.next() {
+		if t.token.kind != tokComma {
+			ArgNames = append(ArgNames, t.token.val)
 		}
 	}
-	if token != ')' {
-		return ErrorP("expected ')' in prototype")
+	if t.token.kind != tokRightParen {
+		return Error(t.token, "expected ')' in prototype")
 	}
 
-	token = s.Scan()
+	t.next()
 	if kind != idef && len(ArgNames) != kind {
-		return ErrorP("invalid number of operands for operator")
+		return Error(t.token, "invalid number of operands for operator")
 	}
-	return &protoAST{fnName, ArgNames, kind != idef, precedence}
+	return &fnPrototypeNode{nodeFnPrototype, pos, fnName, ArgNames, kind != idef, precedence}
 }
 
-func parseDefinition() *funcAST {
-	token = s.Scan()
-	proto := parsePrototype()
-	if proto == nil {
+func (t *tree) parseExpression() node {
+	// pos := t.token.pos
+	lhs := t.parseUnarty()
+	if lhs == nil {
 		return nil
 	}
 
-	e := parseExpression()
-	if e == nil {
-		return nil
-	}
-	return &funcAST{proto, e}
-}
+	return t.parseBinaryOpRHS(1, lhs) //  !!! check on this value wrt our : = and 0 val for not found instead of tut's -1
+} /// also this way of hacking on left to right preference on top of opperator precidence can fail if we have more expressions than the difference in the op pref, right?
 
-func parseExtern() *protoAST {
-	token = s.Scan()
-	return parsePrototype()
-}
-
-func parseTopLevelExpr() *funcAST {
-	e := parseExpression()
-	if e == nil {
-		return nil
+func (t *tree) parseUnarty() node {
+	pos := t.token.pos
+	// If we're not an operator, parse as primary {this is correct.}
+	if t.token.kind < tokUserUnaryOp {
+		return t.parsePrimary()
 	}
 
-	// Make anon proto
-	proto := &protoAST{"", []string{}, false, 0}
-	return &funcAST{proto, e}
+	name := t.token.val
+	t.next()
+	operand := t.parseUnarty()
+	if operand != nil {
+		return &unaryNode{nodeUnary, pos, name, operand}
+	}
+	return nil
+}
+
+func (t *tree) parseBinaryOpRHS(exprPrec int, lhs node) node {
+	pos := t.token.pos
+	for {
+		if t.token.kind < tokUserUnaryOp {
+			return lhs
+		}
+		tokenPrec := t.getTokenPrecedence(t.token.val)
+		if tokenPrec < exprPrec {
+			return lhs
+		}
+		binOp := t.token.val
+		t.next()
+
+		rhs := t.parseUnarty()
+		if rhs == nil {
+			return nil
+		}
+
+		nextPrec := t.getTokenPrecedence(t.token.val)
+		if tokenPrec < nextPrec {
+			rhs = t.parseBinaryOpRHS(tokenPrec+1, rhs)
+			if rhs == nil {
+				return nil
+			}
+		}
+
+		lhs = &binaryNode{nodeBinary, pos, binOp, lhs, rhs}
+	}
+}
+
+func (t *tree) getTokenPrecedence(token string) int {
+	return t.binaryOpPrecedence[token]
+}
+
+func (t *tree) parsePrimary() node {
+	// pos := t.token.pos
+	switch t.token.kind {
+	case tokIdentifier:
+		return t.parseIdentifierExpr()
+	case tokIf:
+		return t.parseIfExpr()
+	case tokFor:
+		return t.parseForExpr()
+	case tokVariable:
+		return t.parseVarExpr()
+	case tokNumber:
+		return t.parseNumericExpr()
+	case tokLeftParen:
+		return t.parseParenExpr()
+	case tokEOF:
+		return nil
+	default:
+		oldToken := t.token
+		t.next()
+		return Error(t.token, fmt.Sprint("unknown token when expecting expression: ", oldToken))
+	}
+}
+
+func (t *tree) parseIdentifierExpr() node {
+	pos := t.token.pos
+	name := t.token.val
+	t.next()
+	// are we a variable? else function call
+	if t.token.kind != tokLeftParen {
+		return &variableNode{nodeVariable, pos, name}
+	}
+	args := []node{}
+	for t.next(); t.token.kind != tokRightParen; {
+		switch t.token.kind {
+		case tokComma:
+			t.next()
+		default:
+			arg := t.parseExpression()
+			if arg == nil {
+				return nil
+			}
+			args = append(args, arg)
+		}
+	}
+	t.next()
+	return &fnCallNode{nodeFnCall, pos, name, args}
+}
+
+func (t *tree) parseIfExpr() node {
+	pos := t.token.pos
+	// if
+	t.next()
+	ifE := t.parseExpression()
+	if ifE == nil {
+		return Error(t.token, "expected condition after 'if'")
+	}
+
+	if t.token.kind != tokThen {
+		return Error(t.token, "expected 'then' after if condition")
+	}
+	t.next()
+	thenE := t.parseExpression()
+	if thenE == nil {
+		return Error(t.token, "expected expression after 'then'")
+	}
+
+	if t.token.kind != tokElse {
+		return Error(t.token, "expected 'else' after then expr")
+	}
+	t.next()
+	elseE := t.parseExpression()
+	if elseE == nil {
+		return Error(t.token, "expected expression after 'else'")
+	}
+
+	return &ifNode{nodeIf, pos, ifE, thenE, elseE}
+}
+
+func (t *tree) parseForExpr() node {
+	pos := t.token.pos
+	t.next()
+	if t.token.kind != tokIdentifier {
+		return Error(t.token, "expected identifier after 'for'")
+	}
+	counter := t.token.val
+
+	t.next()
+	if t.token.kind != tokEqual {
+		return Error(t.token, "expected '=' after 'for "+counter+"'")
+	}
+
+	t.next()
+	start := t.parseExpression()
+	if start == nil {
+		return Error(t.token, "expected expression after 'for "+counter+" ='")
+	}
+	if t.token.kind != tokComma {
+		return Error(t.token, "expected ',' after 'for' start expression")
+	}
+
+	t.next()
+	end := t.parseExpression()
+	if end == nil {
+		return Error(t.token, "expected end expression after 'for' start expression")
+	}
+
+	// optional step
+	var step node
+	if t.token.kind == tokComma {
+		t.next()
+		if step = t.parseExpression(); step == nil {
+			return Error(t.token, "invalid step expression after 'for'")
+		}
+	}
+
+	if t.token.kind != tokIn {
+		return Error(t.token, "expected 'in' after 'for' sub-expression")
+	}
+
+	t.next()
+	body := t.parseExpression()
+	if body == nil {
+		return Error(t.token, "expected body expression after 'for ... in'")
+	}
+
+	return &forNode{nodeFor, pos, counter, start, end, step, body}
+}
+
+func (t *tree) parseVarExpr() node {
+	pos := t.token.pos
+	t.next()
+	var v = variableExprNode{
+		nodeType: nodeVariableExpr,
+		Pos:      pos,
+		vars: []struct {
+			name string
+			node node
+		}{},
+		body: nil,
+	}
+	var val node
+
+	// this forloop can be simplified greatly.
+	if t.token.kind != tokIdentifier {
+		return Error(t.token, "expected identifier after var")
+	}
+	for {
+		name := t.token.val
+		t.next()
+
+		// are we initialized?
+		val = nil
+		if t.token.kind == tokEqual {
+			t.next()
+			val = t.parseExpression()
+			if val == nil {
+				return Error(t.token, "initialization failed")
+			}
+		}
+		v.vars = append(v.vars, struct {
+			name string
+			node node
+		}{name, val})
+
+		if t.token.kind != tokComma {
+			break
+		}
+		t.next()
+
+		if t.token.kind != tokIdentifier {
+			return Error(t.token, "expected identifier after var")
+		}
+	}
+
+	// 'in'
+	if t.token.kind != tokIn {
+		return Error(t.token, "expected 'in' after 'var'")
+	}
+	t.next()
+
+	v.body = t.parseExpression()
+	if v.body == nil {
+		return Error(t.token, "empty body in var expression")
+	}
+	return &v
+}
+
+func (t *tree) parseParenExpr() node {
+	// pos := t.token.pos
+	t.next()
+	v := t.parseExpression()
+	if v == nil {
+		return nil
+	}
+	if t.token.kind != tokRightParen {
+		return Error(t.token, "expected ')'")
+	}
+	t.next()
+	return v
+}
+
+func (t *tree) parseNumericExpr() node {
+	pos := t.token.pos
+	val, err := strconv.ParseFloat(t.token.val, 64)
+	t.next()
+	if err != nil {
+		return Error(t.token, "invalid number")
+	}
+	return &numberNode{nodeNumber, pos, val}
 }
 
 // Helpers:
 // error* prints error message and returns 0-values
-func Error(str string) exprAST {
-	fmt.Fprintf(os.Stderr, "Error at %v: %v\n\ttoken: %v\n\ttext:%v\n", s.Pos(), str, token, s.TokenText())
-	return nil
-}
-
-func ErrorP(str string) *protoAST {
-	Error(str)
-	return nil
-}
-
-func ErrorF(str string) *funcAST {
-	Error(str)
+func Error(t token, str string) node {
+	fmt.Fprintf(os.Stderr, "Error at %v: %v\n\tkind:  %v\n\tvalue: %v\n", t.pos, str, t.kind, t.val)
+	// log.Fatalf("Error at %v: %v\n\tkind:  %v\n\tvalue: %v\n", t.pos, str, t.kind, t.val)
 	return nil
 }
 

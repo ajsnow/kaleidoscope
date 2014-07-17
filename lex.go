@@ -18,22 +18,22 @@ type token struct {
 
 // Defining the String function satisfies the Stinger interface.
 // Satisfying Stringer allows package fmt to pretty-print our tokens.
-func (t *token) String() string {
-	switch {
-	case t.kind == tokError:
-		return t.val
-	case t.kind == tokEOF:
-		return "EOF"
-	case t.kind > tokKeyword:
-		return fmt.Sprintf("<%s>", t.val)
-	case len(t.val) > 10:
-		return fmt.Sprintf("%.10q...", t.val) // Limit the max width for long tokens
-	case t.kind == tokSpace:
-		return "_"
-	default:
-		return t.val
-	}
-}
+// func (t *token) String() string {
+// 	switch {
+// 	case t.kind == tokError:
+// 		return t.val
+// 	case t.kind == tokEOF:
+// 		return "EOF"
+// 	case t.kind > tokKeyword:
+// 		return fmt.Sprintf("<%s>", t.val)
+// 	case len(t.val) > 10:
+// 		return fmt.Sprintf("%.10q...", t.val) // Limit the max width for long tokens
+// 	case t.kind == tokSpace:
+// 		return "_"
+// 	default:
+// 		return t.val
+// 	}
+// }
 
 // tokenType identifies the type of a token.
 type tokenType int
@@ -82,7 +82,7 @@ const (
 )
 
 var key = map[string]tokenType{
-	"define": tokDefine,
+	"def":    tokDefine,
 	"extern": tokExtern,
 	"if":     tokIf,
 	"then":   tokThen,

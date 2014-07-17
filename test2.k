@@ -53,8 +53,8 @@ printstar(5)
 # User-defined Binary Operators
 def binary!(l,r) l * 2 + r / 9
 15 ! 18
-def binary#50(l,r) r*r
-sqrt(2 # (15 ! 74 # sqrt(18)))
+def binary?50(l,r) r*r
+sqrt(2 ? (15 ! 74 ? sqrt(18)))
 def binary∆(l,r) if l < r then r else l
 32 ∆ 2 ∆ 4 ∆ 16 ∆ 96 ∆ 1
 
