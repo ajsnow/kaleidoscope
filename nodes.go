@@ -1,12 +1,14 @@
 package main
 
+import "github.com/ajsnow/llvm"
+
 // Node Nodes
 
 type node interface {
 	Kind() nodeType
 	// String() string
 	Position() Pos
-	// codegen() llvm.Value
+	codegen() llvm.Value
 }
 
 type nodeType int

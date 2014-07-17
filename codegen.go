@@ -1,12 +1,6 @@
-// +build ignore
-
 package main
 
-import (
-	"unicode/utf8"
-
-	"github.com/ajsnow/llvm"
-)
+import "github.com/ajsnow/llvm"
 
 var (
 	TheModule                        = llvm.NewModule("root")
@@ -33,7 +27,7 @@ func createEntryBlockAlloca(f llvm.Value, name string) llvm.Value {
 	return TmpB.CreateAlloca(llvm.DoubleType(), name)
 }
 
-func (n *protoAST) createArgAlloca(f llvm.Value) {
+func (n *fnPrototypeNode) createArgAlloca(f llvm.Value) {
 	args := f.Params()
 	for i := range args {
 		alloca := createEntryBlockAlloca(f, n.args[i])
@@ -42,11 +36,11 @@ func (n *protoAST) createArgAlloca(f llvm.Value) {
 	}
 }
 
-func (n *numAST) codegen() llvm.Value {
+func (n *numberNode) codegen() llvm.Value {
 	return llvm.ConstFloat(llvm.DoubleType(), n.val)
 }
 
-func (n *varAST) codegen() llvm.Value {
+func (n *variableNode) codegen() llvm.Value {
 	v := NamedValues[n.name]
 	if v.IsNil() {
 		return ErrorV("unknown variable name")
@@ -54,10 +48,10 @@ func (n *varAST) codegen() llvm.Value {
 	return Builder.CreateLoad(v, n.name)
 }
 
-func (n *ifAST) codegen() llvm.Value {
+func (n *ifNode) codegen() llvm.Value {
 	// psudeo-Hungarian notation as 'if' & 'else' are Go keywords
 	// also aligns with llvm pkg's func arg names
-	ifv := n.ifE.codegen()
+	ifv := n.ifN.codegen()
 	if ifv.IsNil() {
 		return ErrorV("code generation failed for if expression")
 	}
@@ -71,7 +65,7 @@ func (n *ifAST) codegen() llvm.Value {
 
 	// generate 'then' block
 	Builder.SetInsertPointAtEnd(thenBlk)
-	thenv := n.thenE.codegen()
+	thenv := n.thenN.codegen()
 	if thenv.IsNil() {
 		return ErrorV("code generation failed for then expression")
 	}
@@ -82,7 +76,7 @@ func (n *ifAST) codegen() llvm.Value {
 	// generate 'else' block
 	// C++ unknown eq: TheFunction->getBasicBlockList().push_back(ElseBB);
 	Builder.SetInsertPointAtEnd(elseBlk)
-	elsev := n.elseE.codegen()
+	elsev := n.elseN.codegen()
 	if elsev.IsNil() {
 		return ErrorV("code generation failed for else expression")
 	}
@@ -96,7 +90,7 @@ func (n *ifAST) codegen() llvm.Value {
 	return PhiNode
 }
 
-func (n *forAST) codegen() llvm.Value {
+func (n *forNode) codegen() llvm.Value {
 	startVal := n.start.codegen()
 	if startVal.IsNil() {
 		return ErrorV("code generation failed for start expression")
@@ -130,7 +124,7 @@ func (n *forAST) codegen() llvm.Value {
 	}
 
 	// evaluate end condition before increment
-	endVal := n.end.codegen()
+	endVal := n.test.codegen()
 	if endVal.IsNil() {
 		return endVal
 	}
@@ -155,7 +149,7 @@ func (n *forAST) codegen() llvm.Value {
 	return llvm.ConstFloat(llvm.DoubleType(), 0)
 }
 
-func (n *unaryAST) codegen() llvm.Value {
+func (n *unaryNode) codegen() llvm.Value {
 	operandValue := n.operand.codegen()
 	if operandValue.IsNil() {
 		return ErrorV("nil operand")
@@ -168,7 +162,7 @@ func (n *unaryAST) codegen() llvm.Value {
 	return Builder.CreateCall(f, []llvm.Value{operandValue}, "unop")
 }
 
-func (n *varExprAST) codegen() llvm.Value {
+func (n *variableExprNode) codegen() llvm.Value {
 	var oldvars = []llvm.Value{}
 
 	f := Builder.GetInsertBlock().Parent()
@@ -207,7 +201,7 @@ func (n *varExprAST) codegen() llvm.Value {
 	return bodyVal
 }
 
-func (n *callAST) codegen() llvm.Value {
+func (n *fnCallNode) codegen() llvm.Value {
 	callee := TheModule.NamedFunction(n.callee)
 	if callee.IsNil() {
 		return ErrorV("unknown function referenced")
@@ -228,10 +222,10 @@ func (n *callAST) codegen() llvm.Value {
 	return Builder.CreateCall(callee, args, "calltmp")
 }
 
-func (n *binAST) codegen() llvm.Value {
+func (n *binaryNode) codegen() llvm.Value {
 	// Special case '=' because we don't emit the LHS as an expression
-	if n.op == '=' {
-		l, ok := n.left.(*varAST)
+	if n.op == "=" {
+		l, ok := n.left.(*variableNode)
 		if !ok {
 			return ErrorV("destination of '=' must be a variable")
 		}
@@ -258,15 +252,15 @@ func (n *binAST) codegen() llvm.Value {
 	}
 
 	switch n.op {
-	case '+':
+	case "+":
 		return Builder.CreateFAdd(l, r, "addtmp")
-	case '-':
+	case "-":
 		return Builder.CreateFSub(l, r, "subtmp")
-	case '*':
+	case "*":
 		return Builder.CreateFMul(l, r, "multmp")
-	case '/':
+	case "/":
 		return Builder.CreateFDiv(l, r, "divtmp")
-	case '<':
+	case "<":
 		l = Builder.CreateFCmp(llvm.FloatOLT, l, r, "cmptmp")
 		return Builder.CreateUIToFP(l, llvm.DoubleType(), "booltmp")
 	default:
@@ -278,7 +272,7 @@ func (n *binAST) codegen() llvm.Value {
 	}
 }
 
-func (n *protoAST) codegen() llvm.Value {
+func (n *fnPrototypeNode) codegen() llvm.Value {
 	funcArgs := []llvm.Type{}
 	for _ = range n.args {
 		funcArgs = append(funcArgs, llvm.DoubleType())
@@ -307,23 +301,23 @@ func (n *protoAST) codegen() llvm.Value {
 	return function
 }
 
-func (n *funcAST) codegen() llvm.Value {
+func (n *functionNode) codegen() llvm.Value {
 	NamedValues = make(map[string]llvm.Value)
-
+	p := n.proto.(*fnPrototypeNode)
 	theFunction := n.proto.codegen()
 	if theFunction.IsNil() {
 		return ErrorV("prototype")
 	}
 
-	if n.proto.isOperator && len(n.proto.args) == 2 {
-		opChar, _ := utf8.DecodeLastRuneInString(n.proto.name)
-		binaryOpPrecedence[opChar] = n.proto.precedence
-	}
+	// if p.isOperator && len(p.args) == 2 {
+	// 	opChar, _ := utf8.DecodeLastRuneInString(p.name)
+	//  binaryOpPrecedence[opChar] = p.precedence
+	// }
 
 	block := llvm.AddBasicBlock(theFunction, "entry")
 	Builder.SetInsertPointAtEnd(block)
 
-	n.proto.createArgAlloca(theFunction)
+	p.createArgAlloca(theFunction)
 
 	retVal := n.body.codegen()
 	if retVal.IsNil() {
