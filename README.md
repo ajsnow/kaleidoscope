@@ -1,7 +1,7 @@
 Kaleidoscope
 ============
 
-Go port of [LLVM's Kaleidoscope Tutorial](http://llvm.org/docs/tutorial/LangImpl1.html) using the [go-llvm/llvm](http://github.com/go-llvm/llvm) <sup>[doc](godoc.org/github.com/go-llvm/llvm)</sup> bindings.
+Go port of [LLVM's Kaleidoscope Tutorial](http://llvm.org/docs/tutorial/LangImpl1.html) using the [go-llvm/llvm](http://github.com/go-llvm/llvm) <sup>[doc](http://godoc.org/github.com/go-llvm/llvm)</sup> bindings.
 
 This currently is a fully functional clone of the completed tutorial with slightly modified syntax (optional end of statement semicolons). The syntax will be conformant in the future—I'm currently cleaning up the parser and will add mandatory semicolons during this process.
 
