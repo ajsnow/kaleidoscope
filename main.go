@@ -29,7 +29,7 @@ func main() {
 			os.Exit(-1)
 		}
 		str := string(b)
-		ch := Lex(fn, str)
+		ch := NewLex(fn, str)
 		ast := NewTree(fn, ch)
 		if ast.Parse() && *printAst {
 			spew.Dump(ast)
