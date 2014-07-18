@@ -29,8 +29,8 @@ func main() {
 			os.Exit(-1)
 		}
 		str := string(b)
-		ch := NewLex(fn, str)
-		ast := NewTree(fn, ch)
+		l := NewLex(fn, str)
+		ast := NewTree(fn, l.tokens)
 		if ast.Parse() && *printAst {
 			spew.Dump(ast)
 		}
