@@ -7,9 +7,7 @@ import (
 	"unicode/utf8"
 )
 
-// token
-// A lexeme is the basic unit of lexicographical meaning.
-// Aren't circular definitions fun?
+// token represents the basic lexicographical units of the language.
 type token struct {
 	kind tokenType // The kind of token with which we're dealing.
 	pos  Pos       // The byte offset of the beginning of the token with respect to the beginning of the input.
@@ -38,6 +36,7 @@ type token struct {
 // tokenType identifies the type of a token.
 type tokenType int
 
+// The list of tokenTypes.
 const (
 	// special
 	tokError tokenType = iota // error occurred
@@ -58,7 +57,7 @@ const (
 	tokIdentifier
 
 	// keywords
-	tokKeyword // used to delimit keywords
+	tokKeyword // used to delineate keywords
 	tokDefine
 	tokExtern
 	tokIf
@@ -71,7 +70,7 @@ const (
 	tokVariable
 
 	// operators
-	tokUserUnaryOp
+	tokUserUnaryOp // additionally used to delineate operators
 	tokUserBinaryOp
 	tokEqual
 	tokPlus
@@ -94,6 +93,8 @@ var key = map[string]tokenType{
 	"var":    tokVariable,
 }
 
+// op maps built-in operators to tokenTypes
+// As this should never be written to, it is safe to share between lexer goroutines.
 var op = map[rune]tokenType{
 	'=': tokEqual,
 	'+': tokPlus,
@@ -103,49 +104,55 @@ var op = map[rune]tokenType{
 	'<': tokLessThan,
 }
 
-// uopType differentiates a user-defined unary, binary or not found operator.
-type uopType int
+// userOpType differentiates a user-defined unary, binary or not found operator.
+type userOpType int
 
 const (
-	uopNOP uopType = iota
+	uopNOP userOpType = iota // Signals that the rune is not a user operator.
 	uopUnaryOp
 	uopBinaryOp
 )
-
-// uop maps user defined operators number of operands
-var uop = map[rune]uopType{}
-
-const eof = -1
 
 // stateFn represents the state of the scanner as a function that returns the next state.
 type stateFn func(*lexer) stateFn
 
 // lexer holds the state of the scanner.
 type lexer struct {
-	name  string  // name of input file; used in error reports
-	input string  // input being scanned
-	state stateFn // next lexing function to be called
-	pos   Pos     // current position in input
-	start Pos     // beginning position of the current token
-	width Pos     // width of last rune read from input
-	// lastPos    Pos          // position of most recent token returned from lexNext
-	tokens     chan<- token // channel of lexed items
-	parenDepth int          // nested layers of paren expressions
+	name          string              // name of input file; used in error reports
+	input         string              // input being scanned
+	state         stateFn             // next lexing function to be called
+	pos           Pos                 // current position in input
+	start         Pos                 // beginning position of the current token
+	width         Pos                 // width of last rune read from input
+	tokens        chan token          // channel of lexed items
+	userOperators map[rune]userOpType // userOperators maps user defined operators to number of operands (Implication: no multi-char operators)
+	parenDepth    int                 // nested layers of paren expressions
 }
 
-// Lex creates and runs a new lexer from the input string.
-func Lex(name, input string) <-chan token {
-	ch := make(chan token, 10)
+// NewLex creates and runs a new lexer from the input string.
+func NewLex(name, input string) *lexer {
 	l := &lexer{
-		name:   name,
-		input:  input,
-		tokens: ch,
+		name:          name,
+		input:         input,
+		tokens:        make(chan token, 10),
+		userOperators: map[rune]userOpType{},
 	}
 	go l.run()
-	return ch
+	return l
 }
 
-// next returns the next rune from the input.
+// l.next() returns eof to signal end of file to a stateFn.
+const eof = -1
+
+// word returns the value of the token that would be emitted if
+// l.emit() were to be called.
+func (l *lexer) word() string {
+	return l.input[l.start:l.pos]
+}
+
+// next returns the next rune from the input and advances the scan.
+// It returns the eof constant (-1) if the scanner is at the end of
+// the input.
 func (l *lexer) next() rune {
 	if int(l.pos) >= len(l.input) {
 		l.width = 0
@@ -157,12 +164,14 @@ func (l *lexer) next() rune {
 	return r
 }
 
+// peek returns the next rune without moving the scan forward.
 func (l *lexer) peek() rune {
 	r := l.next()
 	l.backup()
 	return r
 }
 
+// backup moves the scan back one rune.
 func (l *lexer) backup() {
 	l.pos -= l.width
 }
@@ -179,6 +188,15 @@ func (l *lexer) acceptRun(valid string) {
 	l.backup()
 }
 
+// lineNumber returns the line on which a given rune occurred.
+// If we need the line number for many tokens, it'd be better to
+// track this with l.next() and l.backup(). However, we only use
+// this to report lexing & parsing errors—something that is hopefully
+// rare compared to the number of valid tokens and parse nodes.
+func (l *lexer) lineNumber(p Pos) int {
+	return 1 + strings.Count(l.input[:p], "\n")
+}
+
 // errorf sending an error token and terminates the scan by passing nil as the next stateFn
 func (l *lexer) errorf(format string, args ...interface{}) stateFn {
 	l.tokens <- token{
@@ -193,7 +211,7 @@ func (l *lexer) emit(tt tokenType) {
 	l.tokens <- token{
 		kind: tt,
 		pos:  l.start,
-		val:  l.input[l.start:l.pos],
+		val:  l.word(),
 	}
 	l.start = l.pos
 }
@@ -209,7 +227,10 @@ func (l *lexer) run() {
 
 // State Functions
 
-// lexTopLevel
+// lexTopLevel lexes any top level statement. Because our language is simple,
+// our lexer rarely needs to know its prior state and therefore this amounts
+// to the giant-switch style of lexing. Nevertheless, the stateFn technique
+// allows us to easy extend our lexer to more complex grammars.
 func lexTopLevel(l *lexer) stateFn {
 	// Either whitespace, an empty line, a comment,
 	// a number, a paren, identifier, or unary operator.
@@ -219,7 +240,7 @@ func lexTopLevel(l *lexer) stateFn {
 		l.emit(tokEOF)
 		return nil
 	case isSpace(r):
-		l.backup() // could be a single space
+		l.backup()
 		return lexSpace
 	case isEOL(r):
 		l.start = l.pos
@@ -240,7 +261,7 @@ func lexTopLevel(l *lexer) stateFn {
 		l.parenDepth--
 		l.emit(tokRightParen)
 		if l.parenDepth < 0 {
-			return l.errorf("unexpected right paren %#U", r)
+			return l.errorf("unexpected right paren")
 		}
 		return lexTopLevel
 	case '0' <= r && r <= '9':
@@ -252,10 +273,10 @@ func lexTopLevel(l *lexer) stateFn {
 	case op[r] > tokUserBinaryOp:
 		l.emit(op[r])
 		return lexTopLevel
-	case uop[r] == uopBinaryOp:
+	case l.userOperators[r] == uopBinaryOp:
 		l.emit(tokUserBinaryOp)
 		return lexTopLevel
-	case uop[r] == uopUnaryOp:
+	case l.userOperators[r] == uopUnaryOp:
 		l.emit(tokUserUnaryOp)
 		return lexTopLevel
 	default:
@@ -263,33 +284,49 @@ func lexTopLevel(l *lexer) stateFn {
 	}
 }
 
+// lexSpace globs contiguous whitespace.
 func lexSpace(l *lexer) stateFn {
+	globWhitespace(l)
+	return lexTopLevel
+}
+
+// globWhitespace globs contiguous whitespace, but sometimes we
+// don't want to return to lexTopLevel after doing this.
+func globWhitespace(l *lexer) {
 	for isSpace(l.next()) {
 	}
 	l.backup()
 	l.emit(tokSpace)
-	return lexTopLevel
 }
 
+// lexComment runs from '#' to the end of line or end of file.
 func lexComment(l *lexer) stateFn {
-	for !isEOL(l.next()) { // this fails if # ---- EOF check others for similar fault !!!!!
+	for !isEOL(l.next()) {
 	}
 	l.backup()
 	l.emit(tokComment)
 	return lexTopLevel
 }
 
+// lexNumber globs potential number-like strings. We let the parser
+// verify that the token is actually a valid number.
+// e.g. "3.A.8" could be emitted by this function.
 func lexNumber(l *lexer) stateFn {
-	numberish := "0123456789.xabcdefABCDEF" // let the parser check for errors. note: cannot have "." operator
+	numberish := "0123456789.xabcdefABCDEF" // Implication: cannot have "." operator
 	l.acceptRun(numberish)
 	// if isAlphaNumeric(l.peek()) { // probably a mistyped identifier
 	// 	l.next()
-	// 	return l.errorf("bad number syntax: %q", l.input[l.start:l.pos])
+	// 	return l.errorf("bad number syntax: %q", l.word())
 	// }
 	l.emit(tokNumber)
 	return lexTopLevel
 }
 
+// lexIdentfier globs unicode alpha-numerics, determines if they
+// represent a keyword or identifier, and output the appropriate
+// token. For the "binary" & "unary" keywords, we need to add their
+// associated user-defined operator to our map so that we can
+// identify it later.
 func lexIdentifer(l *lexer) stateFn {
 Loop:
 	for {
@@ -298,8 +335,8 @@ Loop:
 			// absorb
 		default:
 			l.backup()
-			word := l.input[l.start:l.pos]
-			if key[word] > tokKeyword {
+			word := l.word()
+			if key[word] > tokKeyword { // We already know it's not an operator.
 				l.emit(key[word])
 				switch word {
 				case "binary":
@@ -316,39 +353,39 @@ Loop:
 	return lexTopLevel
 }
 
+// lexUserBinaryOp checks for spaces and then identifies and maps.
+// the newly defined user operator.
 func lexUserBinaryOp(l *lexer) stateFn {
-	for isSpace(l.next()) {
-	}
-	l.backup()
-	l.emit(tokSpace)
-	r := l.next() // no multi-char operators
-	uop[r] = uopBinaryOp
+	globWhitespace(l)
+	r := l.next() // Implication: no multi-char operators
+	l.userOperators[r] = uopBinaryOp
 	l.emit(tokUserBinaryOp)
 	return lexTopLevel
 }
 
+// lexUserBinaryOp checks for spaces and then identifies and maps.
+// the newly defined user operator.
 func lexUserUnaryOp(l *lexer) stateFn {
-	for isSpace(l.next()) {
-	}
-	l.backup()
-	l.emit(tokSpace)
-	r := l.next() // no multi-char operators
-	uop[r] = uopUnaryOp
+	globWhitespace(l)
+	r := l.next() // Implication: no multi-char operators
+	l.userOperators[r] = uopUnaryOp
 	l.emit(tokUserUnaryOp)
 	return lexTopLevel
 }
 
-// isSpace reports whether r is a space character
+// Helper Functions
+
+// isSpace reports whether r is whitespace.
 func isSpace(r rune) bool {
 	return r == ' ' || r == '\t'
 }
 
-// isEOL reports whether r is an end-of-line character
+// isEOL reports whether r is an end-of-line character or an EOF.
 func isEOL(r rune) bool {
-	return r == '\n' || r == '\r'
+	return r == '\n' || r == '\r' || r == eof
 }
 
-// isValidIdefRune reports if r may be part of an identifier name
+// isValidIdefRune reports if r may be part of an identifier name.
 func isAlphaNumeric(r rune) bool {
 	return r == '_' || unicode.IsLetter(r) || unicode.IsDigit(r)
 }

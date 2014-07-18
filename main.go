@@ -1,12 +1,12 @@
 package main
 
-import "github.com/ajsnow/llvm"
-
 import (
 	"flag"
 	"fmt"
 	"io/ioutil"
+	"os"
 
+	"github.com/ajsnow/llvm"
 	"github.com/davecgh/go-spew/spew"
 )
 
@@ -23,8 +23,12 @@ func main() {
 	}
 
 	if fn := flag.Arg(0); fn != "" {
-		bytes, _ := ioutil.ReadFile(fn)
-		str := string(bytes)
+		b, err := ioutil.ReadFile(fn)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(-1)
+		}
+		str := string(b)
 		ch := Lex(fn, str)
 		ast := NewTree(fn, ch)
 		if ast.Parse() && *printAst {
