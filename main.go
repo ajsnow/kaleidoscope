@@ -10,8 +10,9 @@ import (
 
 var (
 	optimized   = flag.Bool("opt", true, "add some optimization passes")
-	printLLVMIR = flag.Bool("llvm", false, "print LLVM generated code")
+	printTokens = flag.Bool("tok", false, "print tokens")
 	printAst    = flag.Bool("ast", false, "print abstract syntax tree")
+	printLLVMIR = flag.Bool("llvm", false, "print LLVM generated code")
 )
 
 func main() {
@@ -28,7 +29,7 @@ func main() {
 			os.Exit(-1)
 		}
 		str := string(b)
-		l := NewLex(fn, str)
+		l := NewLex(fn, str, *printTokens)
 		ast := NewTree(fn, l.tokens)
 		Exec(ast.roots, *printAst, *printLLVMIR)
 	}
@@ -36,7 +37,7 @@ func main() {
 	// interactive mode
 	s := bufio.NewScanner(os.Stdin)
 	for s.Scan() {
-		l := NewLex("stdin", s.Text()) // probably not the most efficient way to do this
+		l := NewLex("stdin", s.Text(), *printTokens) // probably not the most efficient way to do this
 		ast := NewTree("stdin", l.tokens)
 		Exec(ast.roots, *printAst, *printLLVMIR)
 	}

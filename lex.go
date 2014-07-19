@@ -5,6 +5,8 @@ import (
 	"strings"
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/davecgh/go-spew/spew"
 )
 
 // token represents the basic lexicographical units of the language.
@@ -127,10 +129,11 @@ type lexer struct {
 	tokens        chan token          // channel of lexed items
 	userOperators map[rune]userOpType // userOperators maps user defined operators to number of operands (Implication: no multi-char operators)
 	parenDepth    int                 // nested layers of paren expressions
+	printTokens   bool                // print tokens before sending
 }
 
 // NewLex creates and runs a new lexer from the input string.
-func NewLex(name, input string) *lexer {
+func NewLex(name, input string, printTokens bool) *lexer {
 	l := &lexer{
 		name:          name,
 		input:         input,
@@ -199,20 +202,24 @@ func (l *lexer) lineNumber(p Pos) int {
 
 // errorf sending an error token and terminates the scan by passing nil as the next stateFn
 func (l *lexer) errorf(format string, args ...interface{}) stateFn {
-	l.tokens <- token{
+	t := token{
 		kind: tokError,
 		pos:  l.start,
 		val:  fmt.Sprintf(format, args...)}
+	spew.Dump(t)
+	l.tokens <- t
 	return nil
 }
 
 // emit passes the current token.
 func (l *lexer) emit(tt tokenType) {
-	l.tokens <- token{
+	t := token{
 		kind: tt,
 		pos:  l.start,
 		val:  l.word(),
 	}
+	spew.Dump(t)
+	l.tokens <- t
 	l.start = l.pos
 }
 
