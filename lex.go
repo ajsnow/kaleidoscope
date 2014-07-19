@@ -303,7 +303,9 @@ func globWhitespace(l *lexer) {
 	for isSpace(l.next()) {
 	}
 	l.backup()
-	l.emit(tokSpace)
+	if l.start != l.pos {
+		l.emit(tokSpace)
+	}
 }
 
 // lexComment runs from '#' to the end of line or end of file.
