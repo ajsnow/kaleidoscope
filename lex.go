@@ -139,6 +139,7 @@ func NewLex(name, input string, printTokens bool) *lexer {
 		input:         input,
 		tokens:        make(chan token, 10),
 		userOperators: map[rune]userOpType{},
+		printTokens:   printTokens,
 	}
 	go l.run()
 	return l
@@ -206,7 +207,9 @@ func (l *lexer) errorf(format string, args ...interface{}) stateFn {
 		kind: tokError,
 		pos:  l.start,
 		val:  fmt.Sprintf(format, args...)}
-	spew.Dump(t)
+	if l.printTokens {
+		spew.Dump(t)
+	}
 	l.tokens <- t
 	return nil
 }
@@ -218,7 +221,9 @@ func (l *lexer) emit(tt tokenType) {
 		pos:  l.start,
 		val:  l.word(),
 	}
-	spew.Dump(t)
+	if l.printTokens {
+		spew.Dump(t)
+	}
 	l.tokens <- t
 	l.start = l.pos
 }
