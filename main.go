@@ -1,13 +1,11 @@
 package main
 
 import (
+	"bufio"
 	"flag"
 	"fmt"
 	"io/ioutil"
 	"os"
-
-	"github.com/ajsnow/llvm"
-	"github.com/davecgh/go-spew/spew"
 )
 
 var (
@@ -22,7 +20,8 @@ func main() {
 		optimize()
 	}
 
-	if fn := flag.Arg(0); fn != "" {
+	// handle files
+	for _, fn := range flag.Args() {
 		b, err := ioutil.ReadFile(fn)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
@@ -31,23 +30,14 @@ func main() {
 		str := string(b)
 		l := NewLex(fn, str)
 		ast := NewTree(fn, l.tokens)
-		if ast.Parse() && *printAst {
-			spew.Dump(ast)
-		}
-		for _, n := range ast.root.nodes {
-			llvmIR := n.codegen()
-			if *printLLVMIR {
-				llvmIR.Dump()
-			}
-			if n.Kind() == nodeFunction {
-				p := n.(*functionNode).proto.(*fnPrototypeNode)
-				if p.name == "" {
-					returnval := executionEngine.RunFunction(llvmIR, []llvm.GenericValue{})
-					fmt.Println(returnval.Float(llvm.DoubleType()))
-				}
-			} else {
-				// prototype nodes for externs
-			}
-		}
+		Exec(ast.roots, *printAst, *printLLVMIR)
+	}
+
+	// interactive mode
+	s := bufio.NewScanner(os.Stdin)
+	for s.Scan() {
+		l := NewLex("stdin", s.Text()) // probably not the most efficient way to do this
+		ast := NewTree("stdin", l.tokens)
+		Exec(ast.roots, *printAst, *printLLVMIR)
 	}
 }

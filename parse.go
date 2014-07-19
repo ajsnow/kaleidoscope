@@ -12,15 +12,15 @@ type tree struct {
 	name               string
 	tokens             <-chan token
 	token              token
-	root               *listNode
+	roots              chan node
 	binaryOpPrecedence map[string]int
 }
 
 func NewTree(name string, tokens <-chan token) *tree {
-	return &tree{
+	t := &tree{
 		name:   name,
 		tokens: tokens,
-		root:   &listNode{nodeList, 0, []node{}},
+		roots:  make(chan node, 100),
 		binaryOpPrecedence: map[string]int{
 			"=": 2,
 			"<": 10,
@@ -30,17 +30,20 @@ func NewTree(name string, tokens <-chan token) *tree {
 			"/": 40,
 		},
 	}
+	go t.parse()
+	return t
 }
 
-func (t *tree) Parse() bool {
+func (t *tree) parse() bool {
 	for t.next(); t.token.kind != tokEOF && t.token.kind != tokError; { //t.next() { // may want/need to switch this back once i introduce statement delineation
 		node := t.parseTopLevelStmt()
 		if node != nil {
-			t.root.nodes = append(t.root.nodes, node)
+			t.roots <- node
 		} else {
 			fmt.Println("Nil top level node near:", t.token.pos)
 		}
 	}
+	close(t.roots)
 	return true
 }
 

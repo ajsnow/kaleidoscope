@@ -286,7 +286,7 @@ func (n *fnPrototypeNode) codegen() llvm.Value {
 	}
 
 	if function.BasicBlocksCount() != 0 {
-		return ErrorV("redefinition of function")
+		return ErrorV("redefinition of function: " + n.name)
 	}
 
 	if function.ParamsCount() != len(n.args) {
