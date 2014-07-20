@@ -51,7 +51,7 @@ func (t *tree) parse() bool {
 func (t *tree) next() token {
 	t.token, _ = <-t.tokens // i think this will give me the zero value for a close channel, which is an tokError that will end parsing
 	for t.token.kind == tokSpace || t.token.kind == tokComment ||
-		t.token.kind == tokSemicolon || t.token.kind == tokEOF {
+		t.token.kind == tokEOF {
 		t.token, _ = <-t.tokens
 	}
 	return t.token
@@ -61,6 +61,9 @@ func (t *tree) parseTopLevelStmt() node {
 	switch t.token.kind {
 	case tokNewFile:
 		t.name = t.token.val
+		t.next()
+		return nil
+	case tokSemicolon:
 		t.next()
 		return nil
 	case tokDefine:

@@ -41,6 +41,6 @@ func main() {
 
 	// handle stdin
 	l.AddFile(os.Stdin)
-	l.Stop() // this makes mandel.k work, test.k works regardless
+	l.Stop()
 	wg.Wait()
 }
