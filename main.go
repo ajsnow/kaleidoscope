@@ -9,6 +9,7 @@ import (
 )
 
 var (
+	batch       = flag.Bool("b", false, "batch (non-interactive) mode")
 	optimized   = flag.Bool("opt", true, "add some optimization passes")
 	printTokens = flag.Bool("tok", false, "print tokens")
 	printAst    = flag.Bool("ast", false, "print abstract syntax tree")
@@ -29,6 +30,7 @@ func main() {
 		Exec(nodes, *printAst, *printLLVMIR)
 		wg.Done()
 	}()
+
 	// handle files
 	for _, fn := range flag.Args() {
 		f, err := os.Open(fn)
@@ -40,7 +42,10 @@ func main() {
 	}
 
 	// handle stdin
-	l.AddFile(os.Stdin)
+	if !*batch {
+		l.AddFile(os.Stdin)
+	}
+
 	l.Stop()
 	wg.Wait()
 }
