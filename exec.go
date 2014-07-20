@@ -33,4 +33,5 @@ func Exec(roots <-chan node, printAst, printLLVMIR bool) {
 			// prototype nodes for externs
 		}
 	}
+	spew.Println("Finishing Execution")
 }

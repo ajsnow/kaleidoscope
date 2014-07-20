@@ -1,11 +1,11 @@
 package main
 
 import (
-	"bufio"
 	"flag"
 	"fmt"
-	"io/ioutil"
 	"os"
+
+	"sync"
 )
 
 var (
@@ -21,24 +21,26 @@ func main() {
 		optimize()
 	}
 
+	l, tokens := NewLex(*printTokens)
+	nodes := NewTree(tokens)
+	wg := sync.WaitGroup{}
+	wg.Add(1)
+	go func() {
+		Exec(nodes, *printAst, *printLLVMIR)
+		wg.Done()
+	}()
 	// handle files
 	for _, fn := range flag.Args() {
-		b, err := ioutil.ReadFile(fn)
+		f, err := os.Open(fn)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(-1)
 		}
-		str := string(b)
-		l := NewLex(fn, str, *printTokens)
-		ast := NewTree(fn, l.tokens)
-		Exec(ast.roots, *printAst, *printLLVMIR)
+		l.AddFile(f)
 	}
 
-	// interactive mode
-	s := bufio.NewScanner(os.Stdin)
-	for s.Scan() {
-		l := NewLex("stdin", s.Text(), *printTokens) // probably not the most efficient way to do this
-		ast := NewTree("stdin", l.tokens)
-		Exec(ast.roots, *printAst, *printLLVMIR)
-	}
+	// handle stdin
+	l.AddFile(os.Stdin)
+	l.Stop() // this makes mandel.k work, test.k works regardless
+	wg.Wait()
 }

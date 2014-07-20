@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	"github.com/ajsnow/llvm"
+	"github.com/davecgh/go-spew/spew"
 )
 
 type tree struct {
@@ -16,9 +17,8 @@ type tree struct {
 	binaryOpPrecedence map[string]int
 }
 
-func NewTree(name string, tokens <-chan token) *tree {
+func NewTree(tokens <-chan token) <-chan node {
 	t := &tree{
-		name:   name,
 		tokens: tokens,
 		roots:  make(chan node, 100),
 		binaryOpPrecedence: map[string]int{
@@ -31,32 +31,38 @@ func NewTree(name string, tokens <-chan token) *tree {
 		},
 	}
 	go t.parse()
-	return t
+	return t.roots
 }
 
 func (t *tree) parse() bool {
-	for t.next(); t.token.kind != tokEOF && t.token.kind != tokError; { //t.next() { // may want/need to switch this back once i introduce statement delineation
+	for t.next(); t.token.kind != tokError; { //t.next() { // may want/need to switch this back once i introduce statement delineation
 		node := t.parseTopLevelStmt()
 		if node != nil {
 			t.roots <- node
 		} else {
-			fmt.Println("Nil top level node near:", t.token.pos)
+			// since parsing a tokNewFile returns nil, this is not an error condition.
 		}
 	}
+	spew.Println("Closing Roots Channel")
 	close(t.roots)
 	return true
 }
 
 func (t *tree) next() token {
-	t.token = <-t.tokens
-	for t.token.kind == tokSpace || t.token.kind == tokComment || t.token.kind == tokSemicolon {
-		t.token = <-t.tokens
+	t.token, _ = <-t.tokens // i think this will give me the zero value for a close channel, which is an tokError that will end parsing
+	for t.token.kind == tokSpace || t.token.kind == tokComment ||
+		t.token.kind == tokSemicolon || t.token.kind == tokEOF {
+		t.token, _ = <-t.tokens
 	}
 	return t.token
 }
 
 func (t *tree) parseTopLevelStmt() node {
 	switch t.token.kind {
+	case tokNewFile:
+		t.name = t.token.val
+		t.next()
+		return nil
 	case tokDefine:
 		return t.parseDefinition()
 	case tokExtern:

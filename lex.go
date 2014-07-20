@@ -2,6 +2,8 @@ package main
 
 import (
 	"fmt"
+	"io/ioutil"
+	"os"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -43,6 +45,7 @@ const (
 	// special
 	tokError tokenType = iota // error occurred
 	tokEOF
+	tokNewFile
 	tokComment
 
 	// punctuation
@@ -120,7 +123,8 @@ type stateFn func(*lexer) stateFn
 
 // lexer holds the state of the scanner.
 type lexer struct {
-	name          string              // name of input file; used in error reports
+	files         chan *os.File
+	name          string              // name of current input file; used in error reports
 	input         string              // input being scanned
 	state         stateFn             // next lexing function to be called
 	pos           Pos                 // current position in input
@@ -133,16 +137,27 @@ type lexer struct {
 }
 
 // NewLex creates and runs a new lexer from the input string.
-func NewLex(name, input string, printTokens bool) *lexer {
+func NewLex(printTokens bool) (*lexer, <-chan token) {
+	files := make(chan *os.File, 10)
+	tokens := make(chan token, 10)
 	l := &lexer{
-		name:          name,
-		input:         input,
-		tokens:        make(chan token, 10),
+		files:         files,
+		tokens:        tokens,
 		userOperators: map[rune]userOpType{},
 		printTokens:   printTokens,
 	}
 	go l.run()
-	return l
+	return l, tokens
+}
+
+// AddFiles adds the given file to the lexer's file queue
+func (l *lexer) AddFile(f *os.File) {
+	l.files <- f
+}
+
+// Stop signals that the lexer goroutine should stop once it has finished processing all files currently in its queue
+func (l *lexer) Stop() {
+	close(l.files)
 }
 
 // l.next() returns eof to signal end of file to a stateFn.
@@ -230,11 +245,41 @@ func (l *lexer) emit(tt tokenType) {
 
 // run runs the state machine for the lexer.
 func (l *lexer) run() {
-	for l.state = lexTopLevel; l.state != nil; {
-		l.state = l.state(l)
-		// Println(runtime.FuncForPC(reflect.ValueOf(l.state).Pointer()).Name())
+	for {
+		f, ok := <-l.files
+
+		if !ok {
+			spew.Println("Closing Token Channel")
+			l.errorf("Done")
+			close(l.tokens)
+			break
+		} else {
+			spew.Println("Found File")
+		}
+		l.name = f.Name()
+		b, err := ioutil.ReadAll(f)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "File "+l.name+"failed to read:", err)
+		}
+		f.Close()
+		l.input = string(b)
+		l.pos = 0
+		l.start = 0
+		l.width = 0
+		l.parenDepth = 0
+		t := token{
+			kind: tokNewFile,
+			val:  l.name,
+		}
+		if l.printTokens {
+			spew.Dump(t)
+		}
+		l.tokens <- t
+		for l.state = lexTopLevel; l.state != nil; {
+			l.state = l.state(l)
+			// Println(runtime.FuncForPC(reflect.ValueOf(l.state).Pointer()).Name())
+		}
 	}
-	close(l.tokens) // Tells the client no more tokens will be delivered.
 }
 
 // State Functions
