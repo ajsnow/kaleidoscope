@@ -17,8 +17,8 @@ func Exec(roots <-chan node, printAst, printLLVMIR bool) {
 		}
 		llvmIR := n.codegen()
 		if llvmIR.IsNil() {
-			fmt.Fprintln(os.Stderr, "Aborting")
-			return
+			fmt.Fprintln(os.Stderr, "Codegen failed for node; skipping")
+			break
 		}
 		if printLLVMIR {
 			llvmIR.Dump()

@@ -1,8 +1,8 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"strings"
 	"unicode"
@@ -124,6 +124,7 @@ type stateFn func(*lexer) stateFn
 // lexer holds the state of the scanner.
 type lexer struct {
 	files         chan *os.File
+	scanner       *bufio.Scanner
 	name          string              // name of current input file; used in error reports
 	input         string              // input being scanned
 	state         stateFn             // next lexing function to be called
@@ -174,12 +175,20 @@ func (l *lexer) word() string {
 // the input.
 func (l *lexer) next() rune {
 	if int(l.pos) >= len(l.input) {
-		l.width = 0
-		return eof
+		if l.scanner.Scan() {
+			l.input = l.scanner.Text() + "\n"
+			l.pos = 0
+			l.start = 0
+			l.width = 0
+		} else {
+			l.width = 0
+			return eof
+		}
 	}
 	r, w := utf8.DecodeRuneInString(l.input[l.pos:])
 	l.width = Pos(w)
 	l.pos += l.width
+	// spew.Printf("Rune: %q", r)
 	return r
 }
 
@@ -257,12 +266,11 @@ func (l *lexer) run() {
 			spew.Println("Found File")
 		}
 		l.name = f.Name()
-		b, err := ioutil.ReadAll(f)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "File "+l.name+"failed to read:", err)
-		}
-		f.Close()
-		l.input = string(b)
+		l.scanner = bufio.NewScanner(f)
+		defer f.Close()
+		// l.scanner.Scan()
+		// l.input = l.scanner.Text()
+		l.input = ""
 		l.pos = 0
 		l.start = 0
 		l.width = 0
@@ -271,13 +279,13 @@ func (l *lexer) run() {
 			kind: tokNewFile,
 			val:  l.name,
 		}
-		if l.printTokens {
-			spew.Dump(t)
-		}
+		// if l.printTokens {
+		// 	spew.Dump(t)
+		// }
 		l.tokens <- t
 		for l.state = lexTopLevel; l.state != nil; {
 			l.state = l.state(l)
-			// Println(runtime.FuncForPC(reflect.ValueOf(l.state).Pointer()).Name())
+			// spew.Println("State:", runtime.FuncForPC(reflect.ValueOf(l.state).Pointer()).Name())
 		}
 	}
 }
@@ -360,9 +368,10 @@ func globWhitespace(l *lexer) {
 
 // lexComment runs from '#' to the end of line or end of file.
 func lexComment(l *lexer) stateFn {
-	for !isEOL(l.next()) {
-	}
-	l.backup()
+	// for !isEOL(l.next()) {
+	// }
+	// l.backup()
+	l.pos = Pos(len(l.input))
 	l.emit(tokComment)
 	return lexTopLevel
 }
