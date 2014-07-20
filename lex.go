@@ -44,7 +44,7 @@ type tokenType int
 const (
 	// special
 	tokError tokenType = iota // error occurred
-	tokEOF
+	tokDONE
 	tokNewFile
 	tokComment
 
@@ -85,6 +85,7 @@ const (
 	tokLessThan
 )
 
+// key maps keywords strings to their tokenType.
 var key = map[string]tokenType{
 	"def":    tokDefine,
 	"extern": tokExtern,
@@ -113,7 +114,7 @@ var op = map[rune]tokenType{
 type userOpType int
 
 const (
-	uopNOP userOpType = iota // Signals that the rune is not a user operator.
+	uopNOP userOpType = iota // Signals that the rune is *not* a user operator.
 	uopUnaryOp
 	uopBinaryOp
 )
@@ -123,42 +124,50 @@ type stateFn func(*lexer) stateFn
 
 // lexer holds the state of the scanner.
 type lexer struct {
-	files         chan *os.File
-	scanner       *bufio.Scanner
+	files         chan *os.File       // files to be lexed
+	scanner       *bufio.Scanner      // scanner is a buffered interface to the current file
 	name          string              // name of current input file; used in error reports
-	input         string              // input being scanned
+	line          string              // current line being scanned
 	state         stateFn             // next lexing function to be called
 	pos           Pos                 // current position in input
 	start         Pos                 // beginning position of the current token
 	width         Pos                 // width of last rune read from input
-	tokens        chan token          // channel of lexed items
-	userOperators map[rune]userOpType // userOperators maps user defined operators to number of operands (Implication: no multi-char operators)
+	lineCount     int                 // number of lines seen in the current file
 	parenDepth    int                 // nested layers of paren expressions
-	printTokens   bool                // print tokens before sending
+	tokens        chan token          // channel of lexed items
+	userOperators map[rune]userOpType // userOperators maps user defined operators to number of operands
+
+	printTokens bool // print tokens before sending
 }
 
-// NewLex creates and runs a new lexer from the input string.
-func NewLex(printTokens bool) (*lexer, <-chan token) {
-	files := make(chan *os.File, 10)
-	tokens := make(chan token, 10)
+// Lex creates and runs a new lexer.
+func Lex(printTokens bool) *lexer {
 	l := &lexer{
-		files:         files,
-		tokens:        tokens,
+		files:         make(chan *os.File, 10),
+		tokens:        make(chan token, 10),
 		userOperators: map[rune]userOpType{},
 		printTokens:   printTokens,
 	}
 	go l.run()
-	return l, tokens
+	return l
 }
 
-// AddFiles adds the given file to the lexer's file queue
-func (l *lexer) AddFile(f *os.File) {
+// Add adds the given file to the lexer's file queue
+func (l *lexer) Add(f *os.File) {
 	l.files <- f
 }
 
-// Stop signals that the lexer goroutine should stop once it has finished processing all files currently in its queue
-func (l *lexer) Stop() {
+// Done signals that the user is finished Add()ing files
+// and that the lexer goroutine should stop once it has
+// finished processing all files currently in its queue.
+func (l *lexer) Done() {
 	close(l.files)
+}
+
+// Tokens returns a read-only channel of tokens that can
+// be printed or parsed.
+func (l *lexer) Tokens() <-chan token {
+	return l.tokens
 }
 
 // l.next() returns eof to signal end of file to a stateFn.
@@ -167,16 +176,16 @@ const eof = -1
 // word returns the value of the token that would be emitted if
 // l.emit() were to be called.
 func (l *lexer) word() string {
-	return l.input[l.start:l.pos]
+	return l.line[l.start:l.pos]
 }
 
 // next returns the next rune from the input and advances the scan.
 // It returns the eof constant (-1) if the scanner is at the end of
 // the input.
 func (l *lexer) next() rune {
-	if int(l.pos) >= len(l.input) {
+	if int(l.pos) >= len(l.line) {
 		if l.scanner.Scan() {
-			l.input = l.scanner.Text() + "\n"
+			l.line = l.scanner.Text() + "\n"
 			l.pos = 0
 			l.start = 0
 			l.width = 0
@@ -185,7 +194,7 @@ func (l *lexer) next() rune {
 			return eof
 		}
 	}
-	r, w := utf8.DecodeRuneInString(l.input[l.pos:])
+	r, w := utf8.DecodeRuneInString(l.line[l.pos:])
 	l.width = Pos(w)
 	l.pos += l.width
 	// spew.Printf("Rune: %q", r)
@@ -214,15 +223,6 @@ func (l *lexer) acceptRun(valid string) {
 	for strings.IndexRune(valid, l.next()) >= 0 {
 	}
 	l.backup()
-}
-
-// lineNumber returns the line on which a given rune occurred.
-// If we need the line number for many tokens, it'd be better to
-// track this with l.next() and l.backup(). However, we only use
-// this to report lexing & parsing errors—something that is hopefully
-// rare compared to the number of valid tokens and parse nodes.
-func (l *lexer) lineNumber(p Pos) int {
-	return 1 + strings.Count(l.input[:p], "\n")
 }
 
 // errorf sending an error token and terminates the scan by passing nil as the next stateFn
@@ -256,37 +256,39 @@ func (l *lexer) emit(tt tokenType) {
 func (l *lexer) run() {
 	for {
 		f, ok := <-l.files
-
 		if !ok {
-			spew.Println("Closing Token Channel")
-			l.errorf("Done")
+			l.emit(tokDONE) // tokDONE lets the parser know we're closing the channel
 			close(l.tokens)
 			break
-		} else {
-			spew.Println("Found File")
 		}
+
+		// reset Lexer for new file.
 		l.name = f.Name()
 		l.scanner = bufio.NewScanner(f)
-		defer f.Close()
-		// l.scanner.Scan()
-		// l.input = l.scanner.Text()
-		l.input = ""
+		l.line = ""
 		l.pos = 0
 		l.start = 0
 		l.width = 0
 		l.parenDepth = 0
+
+		// emit a new file token for the parser.
 		t := token{
 			kind: tokNewFile,
 			val:  l.name,
 		}
-		// if l.printTokens {
-		// 	spew.Dump(t)
-		// }
+		if l.printTokens {
+			spew.Dump(t)
+		}
 		l.tokens <- t
+
+		// run state machine for the lexer.
 		for l.state = lexTopLevel; l.state != nil; {
 			l.state = l.state(l)
 			// spew.Println("State:", runtime.FuncForPC(reflect.ValueOf(l.state).Pointer()).Name())
 		}
+
+		// close file handle
+		f.Close()
 	}
 }
 
@@ -302,7 +304,6 @@ func lexTopLevel(l *lexer) stateFn {
 	r := l.next()
 	switch {
 	case r == eof:
-		l.emit(tokEOF)
 		return nil
 	case isSpace(r):
 		l.backup()
@@ -329,7 +330,7 @@ func lexTopLevel(l *lexer) stateFn {
 			return l.errorf("unexpected right paren")
 		}
 		return lexTopLevel
-	case '0' <= r && r <= '9':
+	case '0' <= r && r <= '9', r == '.':
 		l.backup()
 		return lexNumber
 	case isAlphaNumeric(r):
@@ -355,8 +356,8 @@ func lexSpace(l *lexer) stateFn {
 	return lexTopLevel
 }
 
-// globWhitespace globs contiguous whitespace, but sometimes we
-// don't want to return to lexTopLevel after doing this.
+// globWhitespace globs contiguous whitespace. (Sometimes we
+// don't want to return to lexTopLevel after doing this.)
 func globWhitespace(l *lexer) {
 	for isSpace(l.next()) {
 	}
@@ -371,7 +372,7 @@ func lexComment(l *lexer) stateFn {
 	// for !isEOL(l.next()) {
 	// }
 	// l.backup()
-	l.pos = Pos(len(l.input))
+	l.pos = Pos(len(l.line))
 	l.emit(tokComment)
 	return lexTopLevel
 }
@@ -380,8 +381,7 @@ func lexComment(l *lexer) stateFn {
 // verify that the token is actually a valid number.
 // e.g. "3.A.8" could be emitted by this function.
 func lexNumber(l *lexer) stateFn {
-	numberish := "0123456789.xabcdefABCDEF" // Implication: cannot have "." operator
-	l.acceptRun(numberish)
+	l.acceptRun("0123456789.xabcdefABCDEF")
 	// if isAlphaNumeric(l.peek()) { // probably a mistyped identifier
 	// 	l.next()
 	// 	return l.errorf("bad number syntax: %q", l.word())
@@ -396,7 +396,6 @@ func lexNumber(l *lexer) stateFn {
 // associated user-defined operator to our map so that we can
 // identify it later.
 func lexIdentifer(l *lexer) stateFn {
-Loop:
 	for {
 		switch r := l.next(); {
 		case isAlphaNumeric(r):
@@ -415,17 +414,16 @@ Loop:
 			} else {
 				l.emit(tokIdentifier)
 			}
-			break Loop
+			return lexTopLevel
 		}
 	}
-	return lexTopLevel
 }
 
 // lexUserBinaryOp checks for spaces and then identifies and maps.
 // the newly defined user operator.
 func lexUserBinaryOp(l *lexer) stateFn {
 	globWhitespace(l)
-	r := l.next() // Implication: no multi-char operators
+	r := l.next()
 	l.userOperators[r] = uopBinaryOp
 	l.emit(tokUserBinaryOp)
 	return lexTopLevel
@@ -435,7 +433,7 @@ func lexUserBinaryOp(l *lexer) stateFn {
 // the newly defined user operator.
 func lexUserUnaryOp(l *lexer) stateFn {
 	globWhitespace(l)
-	r := l.next() // Implication: no multi-char operators
+	r := l.next()
 	l.userOperators[r] = uopUnaryOp
 	l.emit(tokUserUnaryOp)
 	return lexTopLevel

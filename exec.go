@@ -5,16 +5,12 @@ import (
 	"os"
 
 	"github.com/ajsnow/llvm"
-	"github.com/davecgh/go-spew/spew"
 )
 
 // Exec JIT-compiles the top level statements in the roots chan and,
 // if they are expressions, executes them.
-func Exec(roots <-chan node, printAst, printLLVMIR bool) {
+func Exec(roots <-chan node, printLLVMIR bool) {
 	for n := range roots {
-		if printAst {
-			spew.Dump(n)
-		}
 		llvmIR := n.codegen()
 		if llvmIR.IsNil() {
 			fmt.Fprintln(os.Stderr, "Codegen failed for node; skipping")
@@ -33,5 +29,4 @@ func Exec(roots <-chan node, printAst, printLLVMIR bool) {
 			// prototype nodes for externs
 		}
 	}
-	spew.Println("Finishing Execution")
 }

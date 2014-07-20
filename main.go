@@ -22,12 +22,12 @@ func main() {
 		optimize()
 	}
 
-	l, tokens := NewLex(*printTokens)
-	nodes := NewTree(tokens)
+	lex := Lex(*printTokens)
+	nodes := Parse(lex.Tokens(), *printAst)
 	wg := sync.WaitGroup{}
 	wg.Add(1)
 	go func() {
-		Exec(nodes, *printAst, *printLLVMIR)
+		Exec(nodes, *printLLVMIR)
 		wg.Done()
 	}()
 
@@ -38,14 +38,14 @@ func main() {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(-1)
 		}
-		l.AddFile(f)
+		lex.Add(f)
 	}
 
 	// handle stdin
 	if !*batch {
-		l.AddFile(os.Stdin)
+		lex.Add(os.Stdin)
 	}
 
-	l.Stop()
+	lex.Done()
 	wg.Wait()
 }

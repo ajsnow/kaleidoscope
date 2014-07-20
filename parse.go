@@ -13,14 +13,15 @@ type tree struct {
 	name               string
 	tokens             <-chan token
 	token              token
-	roots              chan node
+	tlns               chan node // top level nodes
 	binaryOpPrecedence map[string]int
+	printAst           bool
 }
 
-func NewTree(tokens <-chan token) <-chan node {
+func Parse(tokens <-chan token, printAst bool) <-chan node {
 	t := &tree{
 		tokens: tokens,
-		roots:  make(chan node, 100),
+		tlns:   make(chan node, 100),
 		binaryOpPrecedence: map[string]int{
 			"=": 2,
 			"<": 10,
@@ -29,30 +30,33 @@ func NewTree(tokens <-chan token) <-chan node {
 			"*": 40,
 			"/": 40,
 		},
+		printAst: printAst,
 	}
 	go t.parse()
-	return t.roots
+	return t.tlns
 }
 
-func (t *tree) parse() bool {
-	for t.next(); t.token.kind != tokError; { //t.next() { // may want/need to switch this back once i introduce statement delineation
-		node := t.parseTopLevelStmt()
-		if node != nil {
-			t.roots <- node
-		} else {
-			// since parsing a tokNewFile returns nil, this is not an error condition.
+func (t *tree) parse() {
+	for t.next(); t.token.kind != tokError || t.token.kind != tokDONE; { //t.next() { // may want/need to switch this back once i introduce statement delineation
+		tln := t.parseTopLevelStmt()
+		if tln != nil {
+			if t.printAst {
+				spew.Dump(tln)
+			}
+			t.tlns <- tln
 		}
 	}
-	spew.Println("Closing Roots Channel")
-	close(t.roots)
-	return true
+
+	if t.token.kind == tokError {
+		spew.Dump(t.token)
+	}
+	close(t.tlns)
 }
 
 func (t *tree) next() token {
-	t.token, _ = <-t.tokens // i think this will give me the zero value for a close channel, which is an tokError that will end parsing
-	for t.token.kind == tokSpace || t.token.kind == tokComment ||
-		t.token.kind == tokEOF {
-		t.token, _ = <-t.tokens
+	t.token = <-t.tokens
+	for t.token.kind == tokSpace || t.token.kind == tokComment {
+		t.token = <-t.tokens
 	}
 	return t.token
 }
@@ -243,7 +247,7 @@ func (t *tree) parsePrimary() node {
 		return t.parseNumericExpr()
 	case tokLeftParen:
 		return t.parseParenExpr()
-	case tokEOF:
+	case tokDONE:
 		return nil
 	default:
 		oldToken := t.token
