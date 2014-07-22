@@ -21,14 +21,26 @@ func main() {
 		Optimize()
 	}
 
-	lex := Lex(*printTokens)
-	nodes := Parse(lex.Tokens(), *printAst)
+	lex := Lex()
+	tokens := lex.Tokens()
+	if *printTokens {
+		tokens = DumpTokens(lex.Tokens())
+	}
+	nodes := Parse(tokens)
 	wg := sync.WaitGroup{}
 	wg.Add(1)
-	go func() {
-		Exec(nodes, *printLLVMIR)
-		wg.Done()
-	}()
+	if *printAst {
+		nodes2 := DumpTree(nodes)
+		go func() {
+			Exec(nodes2, *printLLVMIR)
+			wg.Done()
+		}()
+	} else {
+		go func() {
+			Exec(nodes, *printLLVMIR)
+			wg.Done()
+		}()
+	}
 
 	// handle files
 	for _, fn := range flag.Args() {
@@ -46,5 +58,7 @@ func main() {
 	}
 
 	lex.Done()
+	// time.Sleep(3 * time.Second)
+	// panic("hi")
 	wg.Wait()
 }

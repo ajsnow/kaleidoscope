@@ -136,17 +136,14 @@ type lexer struct {
 	parenDepth    int                 // nested layers of paren expressions
 	tokens        chan token          // channel of lexed items
 	userOperators map[rune]userOpType // userOperators maps user defined operators to number of operands
-
-	printTokens bool // print tokens before sending
 }
 
 // Lex creates and runs a new lexer.
-func Lex(printTokens bool) *lexer {
+func Lex() *lexer {
 	l := &lexer{
 		files:         make(chan *os.File, 10),
 		tokens:        make(chan token, 10),
 		userOperators: map[rune]userOpType{},
-		printTokens:   printTokens,
 	}
 	go l.run()
 	return l
@@ -227,28 +224,20 @@ func (l *lexer) acceptRun(valid string) {
 
 // errorf sending an error token and terminates the scan by passing nil as the next stateFn
 func (l *lexer) errorf(format string, args ...interface{}) stateFn {
-	t := token{
+	l.tokens <- token{
 		kind: tokError,
 		pos:  l.start,
 		val:  fmt.Sprintf(format, args...)}
-	if l.printTokens {
-		spew.Dump(t)
-	}
-	l.tokens <- t
 	return nil
 }
 
 // emit passes the current token.
 func (l *lexer) emit(tt tokenType) {
-	t := token{
+	l.tokens <- token{
 		kind: tt,
 		pos:  l.start,
 		val:  l.word(),
 	}
-	if l.printTokens {
-		spew.Dump(t)
-	}
-	l.tokens <- t
 	l.start = l.pos
 }
 
@@ -257,8 +246,8 @@ func (l *lexer) run() {
 	for {
 		f, ok := <-l.files
 		if !ok {
-			close(l.tokens) // tokDONE is the zero value of a token, so we don't need to send it.
-			break
+			close(l.tokens) // tokEndOfTokens is the zero value of token
+			return
 		}
 
 		// reset Lexer for new file.
@@ -271,14 +260,10 @@ func (l *lexer) run() {
 		l.parenDepth = 0
 
 		// emit a new file token for the parser.
-		t := token{
+		l.tokens <- token{
 			kind: tokNewFile,
 			val:  l.name,
 		}
-		if l.printTokens {
-			spew.Dump(t)
-		}
-		l.tokens <- t
 
 		// run state machine for the lexer.
 		for l.state = lexTopLevel; l.state != nil; {
@@ -286,8 +271,7 @@ func (l *lexer) run() {
 			// spew.Println("State:", runtime.FuncForPC(reflect.ValueOf(l.state).Pointer()).Name())
 		}
 
-		// close file handle
-		f.Close()
+		f.Close() // close file handle
 	}
 }
 
@@ -453,4 +437,22 @@ func isEOL(r rune) bool {
 // isValidIdefRune reports if r may be part of an identifier name.
 func isAlphaNumeric(r rune) bool {
 	return r == '_' || unicode.IsLetter(r) || unicode.IsDigit(r)
+}
+
+// DumpTokens spawns a goroutine to dump incomming tokens and
+// re-emit them on the output channel.
+func DumpTokens(in <-chan token) <-chan token {
+	out := make(chan token)
+	go func() {
+		for {
+			t, ok := <-in
+			if !ok {
+				close(out)
+				return
+			}
+			spew.Dump(t)
+			out <- t
+		}
+	}()
+	return out
 }

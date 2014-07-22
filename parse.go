@@ -21,12 +21,11 @@ type parser struct {
 	token              token          // current token, most reciently recieved
 	topLevelNodes      chan node      // channel of parsed top-level statements
 	binaryOpPrecedence map[string]int // maps binary operators to the precidence determining the order of operations
-	printAst           bool           // prints top-level statements before sending
 }
 
 // Parse creates and runs a new parser, returning a channel of
 // top-level AST sub-trees for further processing.
-func Parse(tokens <-chan token, printAst bool) <-chan node {
+func Parse(tokens <-chan token) <-chan node {
 	p := &parser{
 		tokens:        tokens,
 		topLevelNodes: make(chan node, 100),
@@ -38,7 +37,6 @@ func Parse(tokens <-chan token, printAst bool) <-chan node {
 			"*": 40,
 			"/": 40,
 		},
-		printAst: printAst,
 	}
 	go p.parse()
 	return p.topLevelNodes
@@ -54,9 +52,6 @@ func (p *parser) parse() {
 	for p.next(); p.token.kind > tokError; { //p.next() { // may want/need to switch this back once i introduce statement delineation
 		topLevelNode := p.parseTopLevelStmt()
 		if topLevelNode != nil {
-			if p.printAst {
-				spew.Dump(topLevelNode)
-			}
 			p.topLevelNodes <- topLevelNode
 		}
 	}
@@ -82,8 +77,8 @@ func (p *parser) next() token {
 // a top level expression. Semicolons are ignored;
 // file transitions change the parser's file name variable.
 // --
-// TODO: roll error and tokDONE detection into this function
 // TODO: don't return nil for non-error, non-done conditions
+// TODO: create BadDef, BadExpr, BadExtern nodes
 func (p *parser) parseTopLevelStmt() node {
 	switch p.token.kind {
 	case tokNewFile:
@@ -502,7 +497,8 @@ func (p *parser) parseNumericExpr() node {
 	return &numberNode{nodeNumber, pos, val}
 }
 
-// Helpers:
+// Helper Functions
+
 // Error prints error message and returns a nil node
 func Error(t token, str string) node {
 	fmt.Fprintf(os.Stderr, "Error at %v: %v\n\tkind:  %v\n\tvalue: %v\n", t.pos, str, t.kind, t.val)
@@ -514,4 +510,22 @@ func Error(t token, str string) node {
 func ErrorV(str string) llvm.Value {
 	fmt.Fprintf(os.Stderr, "Error: %v\n", str)
 	return llvm.Value{nil} // TODO: this is wrong; fix it.
+}
+
+// DumpTree spawns a goroutine to dump incoming AST subtrees and
+// re-emit them on the output channel.
+func DumpTree(in <-chan node) <-chan node {
+	out := make(chan node)
+	go func() {
+		for {
+			n, ok := <-in
+			if !ok {
+				close(out)
+				return
+			}
+			spew.Dump(n)
+			out <- n
+		}
+	}()
+	return out
 }
