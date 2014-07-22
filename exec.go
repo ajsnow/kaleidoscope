@@ -22,7 +22,7 @@ func Exec(roots <-chan node, printLLVMIR bool) {
 		if n.Kind() == nodeFunction {
 			p := n.(*functionNode).proto.(*fnPrototypeNode)
 			if p.name == "" {
-				returnval := executionEngine.RunFunction(llvmIR, []llvm.GenericValue{})
+				returnval := execEngine.RunFunction(llvmIR, []llvm.GenericValue{})
 				fmt.Println(returnval.Float(llvm.DoubleType()))
 			}
 		} else {

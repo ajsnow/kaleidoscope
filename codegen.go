@@ -1,38 +1,54 @@
 package main
 
-import "github.com/ajsnow/llvm"
+import (
+	"fmt"
+	"os"
 
-var (
-	TheModule                        = llvm.NewModule("root")
-	FPM                              = llvm.NewFunctionPassManagerForModule(TheModule)
-	unhandledError1                  = llvm.InitializeNativeTarget()
-	executionEngine, unhandledError2 = llvm.NewJITCompiler(TheModule, 0)
-	Builder                          = llvm.NewBuilder()
-	NamedValues                      = map[string]llvm.Value{}
+	"github.com/ajsnow/llvm"
 )
 
-func optimize() {
-	FPM.Add(executionEngine.TargetData())
-	FPM.AddPromoteMemoryToRegisterPass()
-	FPM.AddInstructionCombiningPass()
-	FPM.AddReassociatePass()
-	FPM.AddGVNPass()
-	FPM.AddCFGSimplificationPass()
-	FPM.InitializeFunc()
+var (
+	rootModule             = llvm.NewModule("root")
+	rootFuncPassMgr        = llvm.NewFunctionPassManagerForModule(rootModule)
+	nativeInitErr          = llvm.InitializeNativeTarget()
+	execEngine, jitInitErr = llvm.NewJITCompiler(rootModule, 0)
+	builder                = llvm.NewBuilder()
+	namedVals              = map[string]llvm.Value{}
+)
+
+func init() {
+	if nativeInitErr != nil {
+		fmt.Fprintln(os.Stderr, nativeInitErr)
+		os.Exit(-1)
+	}
+	if jitInitErr != nil {
+		fmt.Fprintln(os.Stderr, jitInitErr)
+		os.Exit(-1)
+	}
+}
+
+func Optimize() {
+	rootFuncPassMgr.Add(execEngine.TargetData())
+	rootFuncPassMgr.AddPromoteMemoryToRegisterPass()
+	rootFuncPassMgr.AddInstructionCombiningPass()
+	rootFuncPassMgr.AddReassociatePass()
+	rootFuncPassMgr.AddGVNPass()
+	rootFuncPassMgr.AddCFGSimplificationPass()
+	rootFuncPassMgr.InitializeFunc()
 }
 
 func createEntryBlockAlloca(f llvm.Value, name string) llvm.Value {
-	var TmpB = llvm.NewBuilder()
-	TmpB.SetInsertPoint(f.EntryBasicBlock(), f.EntryBasicBlock().FirstInstruction())
-	return TmpB.CreateAlloca(llvm.DoubleType(), name)
+	var tmpB = llvm.NewBuilder()
+	tmpB.SetInsertPoint(f.EntryBasicBlock(), f.EntryBasicBlock().FirstInstruction())
+	return tmpB.CreateAlloca(llvm.DoubleType(), name)
 }
 
 func (n *fnPrototypeNode) createArgAlloca(f llvm.Value) {
 	args := f.Params()
 	for i := range args {
 		alloca := createEntryBlockAlloca(f, n.args[i])
-		Builder.CreateStore(args[i], alloca)
-		NamedValues[n.args[i]] = alloca
+		builder.CreateStore(args[i], alloca)
+		namedVals[n.args[i]] = alloca
 	}
 }
 
@@ -41,50 +57,48 @@ func (n *numberNode) codegen() llvm.Value {
 }
 
 func (n *variableNode) codegen() llvm.Value {
-	v := NamedValues[n.name]
+	v := namedVals[n.name]
 	if v.IsNil() {
 		return ErrorV("unknown variable name")
 	}
-	return Builder.CreateLoad(v, n.name)
+	return builder.CreateLoad(v, n.name)
 }
 
 func (n *ifNode) codegen() llvm.Value {
-	// psudeo-Hungarian notation as 'if' & 'else' are Go keywords
-	// also aligns with llvm pkg's func arg names
 	ifv := n.ifN.codegen()
 	if ifv.IsNil() {
 		return ErrorV("code generation failed for if expression")
 	}
-	ifv = Builder.CreateFCmp(llvm.FloatONE, ifv, llvm.ConstFloat(llvm.DoubleType(), 0), "ifcond")
+	ifv = builder.CreateFCmp(llvm.FloatONE, ifv, llvm.ConstFloat(llvm.DoubleType(), 0), "ifcond")
 
-	parentFunc := Builder.GetInsertBlock().Parent()
+	parentFunc := builder.GetInsertBlock().Parent()
 	thenBlk := llvm.AddBasicBlock(parentFunc, "then")
 	elseBlk := llvm.AddBasicBlock(parentFunc, "else")
 	mergeBlk := llvm.AddBasicBlock(parentFunc, "merge")
-	Builder.CreateCondBr(ifv, thenBlk, elseBlk)
+	builder.CreateCondBr(ifv, thenBlk, elseBlk)
 
 	// generate 'then' block
-	Builder.SetInsertPointAtEnd(thenBlk)
+	builder.SetInsertPointAtEnd(thenBlk)
 	thenv := n.thenN.codegen()
 	if thenv.IsNil() {
 		return ErrorV("code generation failed for then expression")
 	}
-	Builder.CreateBr(mergeBlk)
+	builder.CreateBr(mergeBlk)
 	// Codegen of 'Then' can change the current block, update ThenBB for the PHI.
-	thenBlk = Builder.GetInsertBlock()
+	thenBlk = builder.GetInsertBlock()
 
 	// generate 'else' block
 	// C++ unknown eq: TheFunction->getBasicBlockList().push_back(ElseBB);
-	Builder.SetInsertPointAtEnd(elseBlk)
+	builder.SetInsertPointAtEnd(elseBlk)
 	elsev := n.elseN.codegen()
 	if elsev.IsNil() {
 		return ErrorV("code generation failed for else expression")
 	}
-	Builder.CreateBr(mergeBlk)
-	elseBlk = Builder.GetInsertBlock()
+	builder.CreateBr(mergeBlk)
+	elseBlk = builder.GetInsertBlock()
 
-	Builder.SetInsertPointAtEnd(mergeBlk)
-	PhiNode := Builder.CreatePHI(llvm.DoubleType(), "iftmp")
+	builder.SetInsertPointAtEnd(mergeBlk)
+	PhiNode := builder.CreatePHI(llvm.DoubleType(), "iftmp")
 	PhiNode.AddIncoming([]llvm.Value{thenv}, []llvm.BasicBlock{thenBlk})
 	PhiNode.AddIncoming([]llvm.Value{elsev}, []llvm.BasicBlock{elseBlk})
 	return PhiNode
@@ -96,18 +110,18 @@ func (n *forNode) codegen() llvm.Value {
 		return ErrorV("code generation failed for start expression")
 	}
 
-	parentFunc := Builder.GetInsertBlock().Parent()
+	parentFunc := builder.GetInsertBlock().Parent()
 	alloca := createEntryBlockAlloca(parentFunc, n.counter)
-	Builder.CreateStore(startVal, alloca)
+	builder.CreateStore(startVal, alloca)
 	loopBlk := llvm.AddBasicBlock(parentFunc, "loop")
 
-	Builder.CreateBr(loopBlk)
+	builder.CreateBr(loopBlk)
 
-	Builder.SetInsertPointAtEnd(loopBlk)
+	builder.SetInsertPointAtEnd(loopBlk)
 
 	// save higher levels' variables if we have the same name
-	oldVal := NamedValues[n.counter]
-	NamedValues[n.counter] = alloca
+	oldVal := namedVals[n.counter]
+	namedVals[n.counter] = alloca
 
 	if n.body.codegen().IsNil() {
 		return ErrorV("code generation failed for body expression")
@@ -129,21 +143,21 @@ func (n *forNode) codegen() llvm.Value {
 		return endVal
 	}
 
-	curVar := Builder.CreateLoad(alloca, n.counter)
-	nextVar := Builder.CreateFAdd(curVar, stepVal, "nextvar")
-	Builder.CreateStore(nextVar, alloca)
+	curVar := builder.CreateLoad(alloca, n.counter)
+	nextVar := builder.CreateFAdd(curVar, stepVal, "nextvar")
+	builder.CreateStore(nextVar, alloca)
 
-	endVal = Builder.CreateFCmp(llvm.FloatONE, endVal, llvm.ConstFloat(llvm.DoubleType(), 0), "loopcond")
+	endVal = builder.CreateFCmp(llvm.FloatONE, endVal, llvm.ConstFloat(llvm.DoubleType(), 0), "loopcond")
 	afterBlk := llvm.AddBasicBlock(parentFunc, "afterloop")
 
-	Builder.CreateCondBr(endVal, loopBlk, afterBlk)
+	builder.CreateCondBr(endVal, loopBlk, afterBlk)
 
-	Builder.SetInsertPointAtEnd(afterBlk)
+	builder.SetInsertPointAtEnd(afterBlk)
 
 	if !oldVal.IsNil() {
-		NamedValues[n.counter] = oldVal
+		namedVals[n.counter] = oldVal
 	} else {
-		delete(NamedValues, n.counter)
+		delete(namedVals, n.counter)
 	}
 
 	return llvm.ConstFloat(llvm.DoubleType(), 0)
@@ -155,17 +169,17 @@ func (n *unaryNode) codegen() llvm.Value {
 		return ErrorV("nil operand")
 	}
 
-	f := TheModule.NamedFunction("unary" + string(n.name))
+	f := rootModule.NamedFunction("unary" + string(n.name))
 	if f.IsNil() {
 		return ErrorV("unknown unary operator")
 	}
-	return Builder.CreateCall(f, []llvm.Value{operandValue}, "unop")
+	return builder.CreateCall(f, []llvm.Value{operandValue}, "unop")
 }
 
 func (n *variableExprNode) codegen() llvm.Value {
 	var oldvars = []llvm.Value{}
 
-	f := Builder.GetInsertBlock().Parent()
+	f := builder.GetInsertBlock().Parent()
 	for i := range n.vars {
 		name := n.vars[i].name
 		node := n.vars[i].node
@@ -181,10 +195,10 @@ func (n *variableExprNode) codegen() llvm.Value {
 		}
 
 		alloca := createEntryBlockAlloca(f, name)
-		Builder.CreateStore(val, alloca)
+		builder.CreateStore(val, alloca)
 
-		oldvars = append(oldvars, NamedValues[name])
-		NamedValues[name] = alloca
+		oldvars = append(oldvars, namedVals[name])
+		namedVals[name] = alloca
 	}
 
 	// evaluate body now that vars are in scope
@@ -195,14 +209,14 @@ func (n *variableExprNode) codegen() llvm.Value {
 
 	// pop old values
 	for i := range n.vars {
-		NamedValues[n.vars[i].name] = oldvars[i]
+		namedVals[n.vars[i].name] = oldvars[i]
 	}
 
 	return bodyVal
 }
 
 func (n *fnCallNode) codegen() llvm.Value {
-	callee := TheModule.NamedFunction(n.callee)
+	callee := rootModule.NamedFunction(n.callee)
 	if callee.IsNil() {
 		return ErrorV("unknown function referenced")
 	}
@@ -219,7 +233,7 @@ func (n *fnCallNode) codegen() llvm.Value {
 		}
 	}
 
-	return Builder.CreateCall(callee, args, "calltmp")
+	return builder.CreateCall(callee, args, "calltmp")
 }
 
 func (n *binaryNode) codegen() llvm.Value {
@@ -237,10 +251,10 @@ func (n *binaryNode) codegen() llvm.Value {
 		}
 
 		// lookup location of variable from name
-		p := NamedValues[l.name]
+		p := namedVals[l.name]
 
 		// store
-		Builder.CreateStore(val, p)
+		builder.CreateStore(val, p)
 
 		return val
 	}
@@ -253,22 +267,22 @@ func (n *binaryNode) codegen() llvm.Value {
 
 	switch n.op {
 	case "+":
-		return Builder.CreateFAdd(l, r, "addtmp")
+		return builder.CreateFAdd(l, r, "addtmp")
 	case "-":
-		return Builder.CreateFSub(l, r, "subtmp")
+		return builder.CreateFSub(l, r, "subtmp")
 	case "*":
-		return Builder.CreateFMul(l, r, "multmp")
+		return builder.CreateFMul(l, r, "multmp")
 	case "/":
-		return Builder.CreateFDiv(l, r, "divtmp")
+		return builder.CreateFDiv(l, r, "divtmp")
 	case "<":
-		l = Builder.CreateFCmp(llvm.FloatOLT, l, r, "cmptmp")
-		return Builder.CreateUIToFP(l, llvm.DoubleType(), "booltmp")
+		l = builder.CreateFCmp(llvm.FloatOLT, l, r, "cmptmp")
+		return builder.CreateUIToFP(l, llvm.DoubleType(), "booltmp")
 	default:
-		function := TheModule.NamedFunction("binary" + string(n.op))
+		function := rootModule.NamedFunction("binary" + string(n.op))
 		if function.IsNil() {
 			return ErrorV("invalid binary operator")
 		}
-		return Builder.CreateCall(function, []llvm.Value{l, r}, "binop")
+		return builder.CreateCall(function, []llvm.Value{l, r}, "binop")
 	}
 }
 
@@ -278,11 +292,11 @@ func (n *fnPrototypeNode) codegen() llvm.Value {
 		funcArgs = append(funcArgs, llvm.DoubleType())
 	}
 	funcType := llvm.FunctionType(llvm.DoubleType(), funcArgs, false)
-	function := llvm.AddFunction(TheModule, n.name, funcType)
+	function := llvm.AddFunction(rootModule, n.name, funcType)
 
 	if function.Name() != n.name {
 		function.EraseFromParentAsFunction()
-		function = TheModule.NamedFunction(n.name)
+		function = rootModule.NamedFunction(n.name)
 	}
 
 	if function.BasicBlocksCount() != 0 {
@@ -295,14 +309,14 @@ func (n *fnPrototypeNode) codegen() llvm.Value {
 
 	for i, param := range function.Params() {
 		param.SetName(n.args[i])
-		NamedValues[n.args[i]] = param
+		namedVals[n.args[i]] = param
 	}
 
 	return function
 }
 
 func (n *functionNode) codegen() llvm.Value {
-	NamedValues = make(map[string]llvm.Value)
+	namedVals = make(map[string]llvm.Value)
 	p := n.proto.(*fnPrototypeNode)
 	theFunction := n.proto.codegen()
 	if theFunction.IsNil() {
@@ -315,7 +329,7 @@ func (n *functionNode) codegen() llvm.Value {
 	// }
 
 	block := llvm.AddBasicBlock(theFunction, "entry")
-	Builder.SetInsertPointAtEnd(block)
+	builder.SetInsertPointAtEnd(block)
 
 	p.createArgAlloca(theFunction)
 
@@ -325,12 +339,12 @@ func (n *functionNode) codegen() llvm.Value {
 		return ErrorV("function body")
 	}
 
-	Builder.CreateRet(retVal)
+	builder.CreateRet(retVal)
 	if llvm.VerifyFunction(theFunction, llvm.PrintMessageAction) != nil {
 		theFunction.EraseFromParentAsFunction()
 		return ErrorV("function verifiction failed")
 	}
 
-	FPM.RunFunc(theFunction)
+	rootFuncPassMgr.RunFunc(theFunction)
 	return theFunction
 }

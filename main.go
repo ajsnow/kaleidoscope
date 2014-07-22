@@ -4,7 +4,6 @@ import (
 	"flag"
 	"fmt"
 	"os"
-
 	"sync"
 )
 
@@ -19,7 +18,7 @@ var (
 func main() {
 	flag.Parse()
 	if *optimized {
-		optimize()
+		Optimize()
 	}
 
 	lex := Lex(*printTokens)
