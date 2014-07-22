@@ -13,8 +13,8 @@ func Exec(roots <-chan node, printLLVMIR bool) {
 	for n := range roots {
 		llvmIR := n.codegen()
 		if llvmIR.IsNil() {
-			fmt.Fprintln(os.Stderr, "Codegen failed for node; skipping")
-			break
+			fmt.Fprintln(os.Stderr, "Error: Codegen failed; skipping.")
+			continue
 		}
 		if printLLVMIR {
 			llvmIR.Dump()
