@@ -10,9 +10,9 @@ import (
 )
 
 // A parser holds the internal state of the AST being constructed. Instead of
-// composing top-level statements into banches under the AST root, they are
-// send along a node chan that can be codegen'd and executed. This allows us
-// to begin code generation and execution before we have finished parsing
+// composing top-level statements into branches under the AST root, they are
+// send along a node channel that can be codegen'd and executed. This allows
+// us to begin code generation and execution before we have finished parsing
 // input (and/or allows us to use one parser during interactive mode instead
 // of creating a new one for each line).
 type parser struct {
@@ -44,14 +44,14 @@ func Parse(tokens <-chan token, printAst bool) <-chan node {
 	return p.topLevelNodes
 }
 
-// parse is the parsing mainloop. It receives tokens and begins
+// parse is the parsing main loop. It receives tokens and begins
 // the recursive decent until a nil or top-level sub-tree is
 // returned. Non-nils are sent to the topLevelNode channel;
 // nils are discarded (they indicate either errors, semicolons
 // or file boundaries). Once the tokens channel is empty & closed,
 // it closes its own topLevelNodes channel.
 func (p *parser) parse() {
-	for p.next(); p.token.kind != tokError && p.token.kind != tokDONE; { //p.next() { // may want/need to switch this back once i introduce statement delineation
+	for p.next(); p.token.kind > tokError; { //p.next() { // may want/need to switch this back once i introduce statement delineation
 		topLevelNode := p.parseTopLevelStmt()
 		if topLevelNode != nil {
 			if p.printAst {
@@ -70,8 +70,6 @@ func (p *parser) parse() {
 // next advances to the next useful token, discarding tokens
 // that the parser doesn't need to handle like whitespace and
 // comments.
-// --
-// TODO: check for closed channel instead of getting a default value'd tokDONE
 func (p *parser) next() token {
 	for p.token = <-p.tokens; p.token.kind == tokSpace ||
 		p.token.kind == tokComment; p.token = <-p.tokens {
@@ -81,7 +79,7 @@ func (p *parser) next() token {
 
 // parseTopLevelStmt determines if the current token is the
 // beginning of a function definition, external declaration or
-// a top level expression. Top level (lone) semicolons are ignored;
+// a top level expression. Semicolons are ignored;
 // file transitions change the parser's file name variable.
 // --
 // TODO: roll error and tokDONE detection into this function
@@ -248,7 +246,7 @@ func (p *parser) parseBinaryOpRHS(exprPrec int, lhs node) node {
 	pos := p.token.pos
 	for {
 		if p.token.kind < tokUserUnaryOp {
-			return lhs
+			return lhs // an expression like '5' will get sent back up to parseTopLevelExpr or parseDefinition from here.
 		}
 		tokenPrec := p.getTokenPrecedence(p.token.val)
 		if tokenPrec < exprPrec {
@@ -297,7 +295,7 @@ func (p *parser) parsePrimary() node {
 		return p.parseNumericExpr()
 	case tokLeftParen:
 		return p.parseParenExpr()
-	case tokDONE:
+	case tokEndOfTokens:
 		return nil // this token should not be skipped
 	default:
 		oldToken := p.token

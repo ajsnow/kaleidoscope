@@ -43,8 +43,8 @@ type tokenType int
 // The list of tokenTypes.
 const (
 	// special
-	tokError tokenType = iota // error occurred
-	tokDONE
+	tokEndOfTokens tokenType = iota // finished tokenizing all input
+	tokError                        // error occurred
 	tokNewFile
 	tokComment
 
@@ -257,8 +257,7 @@ func (l *lexer) run() {
 	for {
 		f, ok := <-l.files
 		if !ok {
-			l.emit(tokDONE) // tokDONE lets the parser know we're closing the channel
-			close(l.tokens)
+			close(l.tokens) // tokDONE is the zero value of a token, so we don't need to send it.
 			break
 		}
 
