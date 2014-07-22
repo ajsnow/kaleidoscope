@@ -13,15 +13,15 @@ type tree struct {
 	name               string
 	tokens             <-chan token
 	token              token
-	tlns               chan node // top level nodes
+	topLevelNodes      chan node // top level nodes
 	binaryOpPrecedence map[string]int
 	printAst           bool
 }
 
 func Parse(tokens <-chan token, printAst bool) <-chan node {
 	t := &tree{
-		tokens: tokens,
-		tlns:   make(chan node, 100),
+		tokens:        tokens,
+		topLevelNodes: make(chan node, 100),
 		binaryOpPrecedence: map[string]int{
 			"=": 2,
 			"<": 10,
@@ -33,24 +33,24 @@ func Parse(tokens <-chan token, printAst bool) <-chan node {
 		printAst: printAst,
 	}
 	go t.parse()
-	return t.tlns
+	return t.topLevelNodes
 }
 
 func (t *tree) parse() {
-	for t.next(); t.token.kind != tokError || t.token.kind != tokDONE; { //t.next() { // may want/need to switch this back once i introduce statement delineation
-		tln := t.parseTopLevelStmt()
-		if tln != nil {
+	for t.next(); t.token.kind != tokError && t.token.kind != tokDONE; { //t.next() { // may want/need to switch this back once i introduce statement delineation
+		topLevelNode := t.parseTopLevelStmt()
+		if topLevelNode != nil {
 			if t.printAst {
-				spew.Dump(tln)
+				spew.Dump(topLevelNode)
 			}
-			t.tlns <- tln
+			t.topLevelNodes <- topLevelNode
 		}
 	}
 
 	if t.token.kind == tokError {
 		spew.Dump(t.token)
 	}
-	close(t.tlns)
+	close(t.topLevelNodes)
 }
 
 func (t *tree) next() token {
