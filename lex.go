@@ -149,7 +149,10 @@ func Lex() *lexer {
 	return l
 }
 
-// Add adds the given file to the lexer's file queue
+// Add adds the given file to the lexer's file queue.
+// N.B. Add can block (waiting on the lex's files chan to clear),
+// so it should be called in a different goroutine than the ultimate
+// consumer of the compiler's pipeline, e.g. Exec.
 func (l *lexer) Add(f *os.File) {
 	l.files <- f
 }

@@ -19,14 +19,15 @@ func Exec(roots <-chan node, printLLVMIR bool) {
 		if printLLVMIR {
 			llvmIR.Dump()
 		}
-		if n.Kind() == nodeFunction {
-			p := n.(*functionNode).proto.(*fnPrototypeNode)
-			if p.name == "" {
-				returnval := execEngine.RunFunction(llvmIR, []llvm.GenericValue{})
-				fmt.Println(returnval.Float(llvm.DoubleType()))
-			}
-		} else {
-			// prototype nodes for externs
+		if isTopLevelExpr(n) {
+			returnval := execEngine.RunFunction(llvmIR, []llvm.GenericValue{})
+			fmt.Println(returnval.Float(llvm.DoubleType()))
 		}
 	}
+}
+
+// isTopLevelExpr determines if the node is a top level expression.
+// Top level expressions are function nodes with no name.
+func isTopLevelExpr(n node) bool {
+	return n.Kind() == nodeFunction && n.(*functionNode).proto.(*fnPrototypeNode).name == ""
 }

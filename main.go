@@ -4,7 +4,6 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"sync"
 )
 
 var (
@@ -26,39 +25,31 @@ func main() {
 	if *printTokens {
 		tokens = DumpTokens(lex.Tokens())
 	}
-	nodes := Parse(tokens)
-	wg := sync.WaitGroup{}
-	wg.Add(1)
-	if *printAst {
-		nodes2 := DumpTree(nodes)
-		go func() {
-			Exec(nodes2, *printLLVMIR)
-			wg.Done()
-		}()
-	} else {
-		go func() {
-			Exec(nodes, *printLLVMIR)
-			wg.Done()
-		}()
-	}
 
-	// handle files
-	for _, fn := range flag.Args() {
-		f, err := os.Open(fn)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			os.Exit(-1)
+	// add files for the lexer to lex
+	go func() {
+		// command line filenames
+		for _, fn := range flag.Args() {
+			f, err := os.Open(fn)
+			if err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				os.Exit(-1)
+			}
+			lex.Add(f)
 		}
-		lex.Add(f)
+
+		// stdin
+		if !*batch {
+			lex.Add(os.Stdin)
+		}
+		lex.Done()
+	}()
+
+	nodes := Parse(tokens)
+	nodesForExec := nodes
+	if *printAst {
+		nodesForExec = DumpTree(nodes)
 	}
 
-	// handle stdin
-	if !*batch {
-		lex.Add(os.Stdin)
-	}
-
-	lex.Done()
-	// time.Sleep(3 * time.Second)
-	// panic("hi")
-	wg.Wait()
+	Exec(nodesForExec, *printLLVMIR)
 }

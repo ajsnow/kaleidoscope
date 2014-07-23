@@ -499,14 +499,14 @@ func (p *parser) parseNumericExpr() node {
 
 // Helper Functions
 
-// Error prints error message and returns a nil node
+// Error prints error message and returns a nil node.
 func Error(t token, str string) node {
 	fmt.Fprintf(os.Stderr, "Error at %v: %v\n\tkind:  %v\n\tvalue: %v\n", t.pos, str, t.kind, t.val)
 	// log.Fatalf("Error at %v: %v\n\tkind:  %v\n\tvalue: %v\n", p.pos, str, p.kind, p.val)
 	return nil
 }
 
-// ErrorV prints the error message and returns a nil llvm.Value
+// ErrorV prints the error message and returns a nil llvm.Value.
 func ErrorV(str string) llvm.Value {
 	fmt.Fprintf(os.Stderr, "Error: %v\n", str)
 	return llvm.Value{nil} // TODO: this is wrong; fix it.
